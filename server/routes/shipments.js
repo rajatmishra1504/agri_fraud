@@ -147,12 +147,20 @@ router.get('/',
 router.post(
   "/:id/status",
   authenticateToken,
+  authorizeRoles('transporter', 'admin'),
   async (req, res) => {
 
     try {
 
       const { id } = req.params;
       const { status } = req.body;
+
+      const allowedStatuses = ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'];
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({
+          error: `Invalid status. Allowed values: ${allowedStatuses.join(', ')}`
+        });
+      }
 
       const result = await pool.query(
         `

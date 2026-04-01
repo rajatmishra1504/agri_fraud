@@ -35,6 +35,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/batches', require('./routes/batches'));
 app.use('/api/certificates', require('./routes/certificates'));
 app.use('/api/shipments', require('./routes/shipments'));
+app.use('/api/orders', require('./routes/orders'));
 app.use('/api/fraud', require('./routes/fraud'));
 app.use('/api/cases', require('./routes/cases'));
 app.use('/api/audit', require('./routes/audit'));
@@ -69,6 +70,14 @@ app.get('/api-docs', (req, res) => {
         'GET /api/shipments': 'List shipments',
         'POST /api/shipments': 'Create shipment',
         'PUT /api/shipments/:id': 'Update shipment'
+      },
+      orders: {
+        'GET /api/orders/my': 'List current buyer purchase requests',
+        'POST /api/orders': 'Create purchase request',
+        'GET /api/orders': 'List all purchase requests (admin/analyst)',
+        'PATCH /api/orders/:id/review': 'Approve or reject an order (admin/analyst)',
+        'PATCH /api/orders/:id/fulfill': 'Fulfill an approved order (admin)',
+        'PATCH /api/orders/:id/cancel': 'Cancel an order (buyer/admin)'
       },
       fraud: {
         'GET /api/fraud/flags': 'List fraud flags',
