@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: agri-fraud-db
+    environment:
+      POSTGRES_DB: agri_fraud_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agri-network
+
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: agri-fraud-app
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: agri_fraud_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      JWT_SECRET: change-this-super-secret-jwt-key-in-production-12345
+      FRONTEND_URL: http://localhost:5000
+      PORT: 5000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    command: sh -c "sleep 10 && node server/database/migrate.js && node server/database/seed.js && node server/server.js"
+    networks:
+      - agri-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  agri-network:
+    driver: bridge
