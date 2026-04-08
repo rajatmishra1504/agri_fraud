@@ -1,8 +1,0 @@
-# Python requirements for agri-fraud-detection
-# This project is Node.js-based, so there are no required Python packages.
-#
-# Runtime prerequisites (non-pip):
-# - Node.js >= 18.0.0
-# - npm >= 9.0.0
-# - PostgreSQL >= 14
-# - Docker and Docker Compose (optional)

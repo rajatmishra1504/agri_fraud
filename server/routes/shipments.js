@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../database/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const auditLog = require('../middleware/auditLog');
-
+const fraudEngine = require('../services/fraudDetection');
 
 // ❌ REMOVED WRONG FRONTEND FUNCTION
 // const updateTransit = async (id, status) => {}
@@ -27,9 +27,9 @@ router.post('/',
         INSERT INTO shipments (
           batch_id, shipment_number, from_location, to_location,
           distance_km, weight_kg, transporter_id, vehicle_number,
-          from_lat, from_lng, to_lat, to_lng, shipped_at, status
+          from_lat, from_lng, to_lat, to_lng, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), 'IN_TRANSIT')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'PENDING')
         RETURNING *
       `, [
         batch_id,
@@ -148,6 +148,7 @@ router.post(
   "/:id/status",
   authenticateToken,
   authorizeRoles('transporter', 'admin'),
+  auditLog('UPDATE_SHIPMENT', 'shipment'),
   async (req, res) => {
 
     try {
@@ -155,28 +156,34 @@ router.post(
       const { id } = req.params;
       const { status } = req.body;
 
-      const allowedStatuses = ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'];
-      if (!allowedStatuses.includes(status)) {
-        return res.status(400).json({
-          error: `Invalid status. Allowed values: ${allowedStatuses.join(', ')}`
-        });
-      }
-
-      const result = await pool.query(
-        `
+      let updateQuery = `
         UPDATE shipments
         SET status = $1,
             updated_at = NOW()
-        WHERE id = $2
-        RETURNING *
-        `,
-        [status, id]
-      );
+      `;
+
+      if (status === 'DELIVERED') {
+         updateQuery += `, delivered_at = NOW() `;
+      } else if (status === 'IN_TRANSIT') {
+         updateQuery += `, shipped_at = NOW() `;
+      }
+
+      updateQuery += ` WHERE id = $2 RETURNING *`;
+
+      const result = await pool.query(updateQuery, [status, id]);
 
       if (result.rows.length === 0) {
         return res.status(404).json({
           error: "Shipment not found"
         });
+      }
+
+      // If status is DELIVERED, run the fraud detection engine to check travel times 
+      if (status === 'DELIVERED') {
+        // Run scan asynchronously without blocking the response
+        setTimeout(() => {
+          fraudEngine.scanAllBatches().catch(err => console.error('Auto fraud scan failed:', err));
+        }, 100);
       }
 
       res.json(result.rows[0]);

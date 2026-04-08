@@ -7,16 +7,74 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 require('dotenv').config();
 
+const winston = require('winston');
+const fs = require('fs');
+
 const app = express();
+
+// Set up logging directory
+const logDir = 'C:\\Users\\OMEN\\OneDrive\\Desktop\\Dbms_project\\fixed\\agri-fraud-detection-v3\\agri-fraud-detection\\logs';
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+}
+
+// Configure Winston logger for standard logs
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: path.join(logDir, 'error.log'), level: 'error' }),
+    new winston.transports.File({ filename: path.join(logDir, 'combined.log') })
+  ]
+});
+
+// Configure Winston logger for specific user activity
+const activityLogger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.printf(info => `[${info.timestamp}] ACTIVITY: ${info.message}`)
+  ),
+  transports: [
+    new winston.transports.File({ filename: path.join(logDir, 'activity.log') })
+  ]
+});
+global.activityLogger = activityLogger;
+
+// For development convenience, output to console too
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.simple()
+  }));
+}
+
+// Intercept global console logs so ALL logs are captured
+const originalLog = console.log;
+const originalError = console.error;
+
+console.log = function(...args) {
+  logger.info(args.join(' '));
+  originalLog.apply(console, args);
+};
+
+console.error = function(...args) {
+  const errMessage = args.map(arg => (arg instanceof Error ? arg.stack : String(arg))).join(' ');
+  logger.error(errMessage);
+  originalError.apply(console, args);
+};
 
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: true,
   credentials: true
 }));
 app.use(compression());
-app.use(morgan('combined'));
+// Output morgan requests directly into winston logger
+app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -35,7 +93,6 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/batches', require('./routes/batches'));
 app.use('/api/certificates', require('./routes/certificates'));
 app.use('/api/shipments', require('./routes/shipments'));
-app.use('/api/orders', require('./routes/orders'));
 app.use('/api/fraud', require('./routes/fraud'));
 app.use('/api/cases', require('./routes/cases'));
 app.use('/api/audit', require('./routes/audit'));
@@ -70,14 +127,6 @@ app.get('/api-docs', (req, res) => {
         'GET /api/shipments': 'List shipments',
         'POST /api/shipments': 'Create shipment',
         'PUT /api/shipments/:id': 'Update shipment'
-      },
-      orders: {
-        'GET /api/orders/my': 'List current buyer purchase requests',
-        'POST /api/orders': 'Create purchase request',
-        'GET /api/orders': 'List all purchase requests (admin/analyst)',
-        'PATCH /api/orders/:id/review': 'Approve or reject an order (admin/analyst)',
-        'PATCH /api/orders/:id/fulfill': 'Fulfill an approved order (admin)',
-        'PATCH /api/orders/:id/cancel': 'Cancel an order (buyer/admin)'
       },
       fraud: {
         'GET /api/fraud/flags': 'List fraud flags',

@@ -15,7 +15,6 @@ DROP TABLE IF EXISTS audit_logs CASCADE;
 DROP TABLE IF EXISTS fraud_cases CASCADE;
 DROP TABLE IF EXISTS fraud_flags CASCADE;
 DROP TABLE IF EXISTS shipments CASCADE;
-DROP TABLE IF EXISTS purchase_orders CASCADE;
 DROP TABLE IF EXISTS certificates CASCADE;
 DROP TABLE IF EXISTS batches CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
@@ -25,8 +24,7 @@ CREATE TYPE user_role AS ENUM ('inspector', 'transporter', 'buyer', 'fraud_analy
 CREATE TYPE flag_severity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
 CREATE TYPE flag_status AS ENUM ('OPEN', 'INVESTIGATING', 'CLOSED');
 CREATE TYPE case_decision AS ENUM ('FRAUD', 'NOT_FRAUD', 'PENDING');
-CREATE TYPE shipment_status AS ENUM ('PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED');
-CREATE TYPE order_status AS ENUM ('REQUESTED', 'APPROVED', 'REJECTED', 'FULFILLED', 'CANCELLED');
+CREATE TYPE shipment_status AS ENUM ('PENDING', 'IN_TRANSIT', 'DELIVERED', 'DELAYED', 'CANCELLED');
 
 -- Users table
 CREATE TABLE users (
@@ -113,31 +111,6 @@ CREATE INDEX idx_shipments_batch_id ON shipments(batch_id);
 CREATE INDEX idx_shipments_status ON shipments(status);
 CREATE INDEX idx_shipments_transporter_id ON shipments(transporter_id);
 
--- Purchase Orders table
-CREATE TABLE purchase_orders (
-    id SERIAL PRIMARY KEY,
-    order_number VARCHAR(50) UNIQUE NOT NULL,
-    buyer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
-    requested_quantity_kg DECIMAL(10, 2) NOT NULL,
-    notes TEXT,
-    status order_status DEFAULT 'REQUESTED',
-    reviewed_by INTEGER REFERENCES users(id),
-    reviewed_at TIMESTAMP,
-    rejection_reason TEXT,
-    fulfilled_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_purchase_orders_buyer_id ON purchase_orders(buyer_id);
-CREATE INDEX idx_purchase_orders_batch_id ON purchase_orders(batch_id);
-CREATE INDEX idx_purchase_orders_status ON purchase_orders(status);
-
-CREATE UNIQUE INDEX uq_purchase_orders_active_buyer_batch
-ON purchase_orders (buyer_id, batch_id)
-WHERE status IN ('REQUESTED', 'APPROVED');
-
 -- Fraud Flags table
 CREATE TABLE fraud_flags (
     id SERIAL PRIMARY KEY,
@@ -214,9 +187,6 @@ CREATE TRIGGER update_batches_updated_at BEFORE UPDATE ON batches
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_shipments_updated_at BEFORE UPDATE ON shipments
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_purchase_orders_updated_at BEFORE UPDATE ON purchase_orders
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_fraud_flags_updated_at BEFORE UPDATE ON fraud_flags

@@ -22,6 +22,10 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         (SELECT COUNT(*) FROM fraud_flags 
          WHERE severity = 'HIGH' OR severity = 'CRITICAL') as high_severity,
 
+        (SELECT COUNT(*) FROM batches) as total_batches,
+
+        (SELECT COUNT(*) FROM certificates) as total_certificates,
+
         (
           SELECT json_object_agg(tc.flag_type, tc.type_count)
           FROM (

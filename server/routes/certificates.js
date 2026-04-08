@@ -7,6 +7,20 @@ const crypto = require('crypto');
 const QRCode = require('qrcode');
 const multer = require('multer');
 const path = require('path');
+const os = require('os');
+
+const getFrontendUrl = () => {
+  if (process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('localhost')) return process.env.FRONTEND_URL;
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return `http://${iface.address}:3000`;
+      }
+    }
+  }
+  return 'http://localhost:3000';
+};
 
 // Configure multer for PDF uploads
 const fs = require('fs');
@@ -77,7 +91,8 @@ router.post('/',
       
       // Generate QR code data
       const qrData = crypto.randomBytes(16).toString('hex');
-      const qrCodeUrl = await QRCode.toDataURL(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify/${qrData}`);
+      const frontendUrl = getFrontendUrl();
+      const qrCodeUrl = await QRCode.toDataURL(`${frontendUrl}/verify/${qrData}`);
       
       const result = await pool.query(`
         INSERT INTO certificates (
@@ -135,11 +150,12 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const result = await pool.query(query, params);
 
+    const frontendUrl = getFrontendUrl();
     // ✅ generate QR image for each certificate
     const certificatesWithQR = await Promise.all(
       result.rows.map(async (cert) => {
         const qrImage = await QRCode.toDataURL(
-          `${process.env.FRONTEND_URL || "http://localhost:3000"}/verify/${cert.qr_code}`
+          `${frontendUrl}/verify/${cert.qr_code}`
         );
 
         return {
@@ -178,9 +194,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Certificate not found' });
     }
     
+    const frontendUrl = getFrontendUrl();
     // Generate QR code image
     const qrCodeUrl = await QRCode.toDataURL(
-      `${process.env.FRONTEND_URL}/verify/${result.rows[0].qr_code}`
+      `${frontendUrl}/verify/${result.rows[0].qr_code}`
     );
     
     res.json({
