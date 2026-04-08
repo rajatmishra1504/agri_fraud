@@ -95,23 +95,33 @@ Fields:
 ### List Shipments
 **GET** `/shipments`
 
+### Transporter Queue (Approved Requests)
+**GET** `/shipments/queue` (Transporter, Admin)
+
+Returns approved buyer requests that are not yet mapped to a shipment. Includes:
+- pickup location from batch creation (`pickup_location`)
+- buyer delivery location/date (`delivery_location`, `preferred_delivery_date`)
+
 ### Create Shipment
 **POST** `/shipments` (Transporter, Admin)
 
 ```json
 {
-  "batch_id": 1,
-  "from_location": "Punjab, India",
-  "to_location": "Delhi, India",
+  "order_id": 12,
   "distance_km": 350.5,
   "weight_kg": 5000,
   "vehicle_number": "DL01AB1234",
-  "from_lat": 30.7333,
-  "from_lng": 76.7794,
-  "to_lat": 28.7041,
-  "to_lng": 77.1025
+  "expected_delivery_date": "2026-04-12",
+  "current_location": "Punjab dispatch yard",
+  "delivery_notes": "Keep away from moisture",
+  "status": "PENDING"
 }
 ```
+
+When `order_id` is provided:
+- pickup is auto-filled from batch (`farm_location`)
+- delivery destination/date are pulled from buyer order
+- one shipment per approved order is enforced
 
 ### Update Shipment
 **PUT** `/shipments/:id` (Transporter, Admin)
@@ -119,10 +129,49 @@ Fields:
 ```json
 {
   "status": "DELIVERED|IN_TRANSIT|CANCELLED",
-  "delivered_at": "2024-01-20T10:30:00Z",
-  "weight_kg": 4980
+  "delivered_at": "2026-04-12T10:30:00Z",
+  "weight_kg": 4980,
+  "current_location": "Delhi warehouse",
+  "delivered_to_name": "Warehouse Supervisor",
+  "delivery_notes": "Received in good condition"
 }
 ```
+
+When updated to `DELIVERED`, linked approved order is auto-marked as `FULFILLED`.
+
+## Purchase Orders
+
+### Create Buyer Purchase Request
+**POST** `/orders` (Buyer, Admin)
+
+Note:
+- Buyers can place multiple requests for the same batch over time (real-world repeat purchasing).
+- Each approved request maps to its own shipment workflow.
+- Identical repeat submits within a short safety window are rejected to prevent accidental double-click duplicates.
+
+```json
+{
+  "batch_id": 1,
+  "requested_quantity_kg": 1200,
+  "delivery_location": "Delhi Central Warehouse",
+  "preferred_delivery_date": "2026-04-12",
+  "delivery_contact_name": "Rohit Sharma",
+  "delivery_contact_phone": "+919999999999",
+  "delivery_instructions": "Unload at gate 3",
+  "notes": "Need clean and dry stock"
+}
+```
+
+### List Buyer Orders
+**GET** `/orders/my` (Buyer, Admin)
+
+### List All Orders
+**GET** `/orders` (Admin, Fraud Analyst)
+
+Response now includes shipment linkage fields where available:
+- `shipment_id`
+- `shipment_number`
+- `shipment_status`
 
 ## Fraud Detection
 

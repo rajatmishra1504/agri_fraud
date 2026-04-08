@@ -6,3 +6,4 @@ uploads/
 logs/
 *.log
 .DS_Store
+client/$prefix/

@@ -29,6 +29,7 @@ async function seed() {
     
     const inspectorId = users.rows.find(u => u.role === 'inspector').id;
     const transporterId = users.rows.find(u => u.role === 'transporter').id;
+    const buyerId = users.rows.find(u => u.role === 'buyer').id;
     
     // Create sample batches
     const batches = await client.query(`
@@ -70,6 +71,24 @@ async function seed() {
     `, [transporterId]);
     
     console.log('✅ Created shipments');
+
+    // Create sample purchase request
+    await client.query(`
+      INSERT INTO purchase_orders (
+        order_number, buyer_id, batch_id, requested_quantity_kg,
+        delivery_location, preferred_delivery_date,
+        delivery_contact_name, delivery_contact_phone, delivery_instructions,
+        notes, status
+      )
+      VALUES (
+        $1, $2, 1, 1000.00,
+        'Delhi Central Warehouse', CURRENT_DATE + INTERVAL '5 days',
+        'Bob Buyer', '+911234567890', 'Call 30 mins before arrival',
+        'Initial buyer request for wheat stock', 'REQUESTED'
+      )
+    `, [`ORD-${new Date().getFullYear()}-000001`, buyerId]);
+
+    console.log('✅ Created purchase requests');
     
     // Create some fraud flags for demonstration
     await client.query(`

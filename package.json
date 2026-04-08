@@ -11,6 +11,7 @@
     "dev:full": "concurrently \"npm run dev\" \"npm run client\"",
     "build": "cd client && npm run build",
     "migrate": "node server/database/migrate.js",
+    "migrate:orders": "node server/database/migrateOrdersFeature.js",
     "seed": "node server/database/seed.js",
     "fraud:scan": "node server/jobs/fraudScan.js",
     "test": "jest --coverage",

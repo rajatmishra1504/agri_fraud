@@ -4,7 +4,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../database/db');
 const { body, validationResult } = require('express-validator');
-const { authenticateToken } = require('../middleware/auth');
 
 // Register
 router.post('/register',
@@ -113,10 +112,6 @@ router.post('/login',
       // Remove password hash from response
       delete user.password_hash;
 
-      if (global.activityLogger) {
-        global.activityLogger.info(`User ${user.email} (Role: ${user.role}) logged in successfully.`);
-      }
-
       res.json({
         message: 'Login successful',
         user,
@@ -128,14 +123,6 @@ router.post('/login',
     }
   }
 );
-
-// Logout
-router.post('/logout', authenticateToken, (req, res) => {
-  if (global.activityLogger && req.user) {
-    global.activityLogger.info(`User ID ${req.user.id} (Role: ${req.user.role}) logged out.`);
-  }
-  res.json({ message: 'Logout successfully logged' });
-});
 
 // Get current user
 router.get('/me', async (req, res) => {

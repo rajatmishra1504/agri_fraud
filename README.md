@@ -25,7 +25,7 @@ A comprehensive web system for detecting and investigating fraud in agricultural
 ### Tech Stack
 - **Backend**: Node.js + Express.js
 - **Database**: PostgreSQL with full ACID compliance
-- **Frontend**: React + Tailwind CSS
+- **Frontend**: React (Create React App)
 - **Authentication**: JWT tokens
 - **File Storage**: AWS S3 / Local storage
 - **Deployment**: Docker + AWS EC2 / Railway / Render
@@ -53,7 +53,7 @@ audit_logs (id, user_id, action, entity_type, entity_id, metadata, created_at)
 
 1. **Clone and Install**
 ```bash
-cd agri-fraud-detection
+cd agri_fraud
 npm install
 cd client && npm install && cd ..
 ```
@@ -154,11 +154,8 @@ npm run deploy:aws
 # Run all tests
 npm test
 
-# Run with coverage
-npm run test:coverage
-
-# E2E tests
-npm run test:e2e
+# Run tests in watch mode
+npm run test:watch
 ```
 
 ## 📈 Monitoring
