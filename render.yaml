@@ -16,6 +16,8 @@ services:
         generateValue: true
       - key: PORT
         value: 5000
+      - key: CI
+        value: "false"
     autoDeploy: true
 
 databases:
