@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   buyer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
   batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
   requested_quantity_kg DECIMAL(10, 2) NOT NULL,
+  requested_unit VARCHAR(20) NOT NULL DEFAULT 'kg',
   notes TEXT,
   status order_status DEFAULT 'REQUESTED',
   reviewed_by INTEGER REFERENCES users(id),
@@ -31,12 +32,23 @@ ALTER TABLE purchase_orders
   ADD COLUMN IF NOT EXISTS delivery_contact_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS delivery_contact_phone VARCHAR(20),
   ADD COLUMN IF NOT EXISTS delivery_instructions TEXT,
+  ADD COLUMN IF NOT EXISTS requested_unit VARCHAR(20) DEFAULT 'kg',
   ADD COLUMN IF NOT EXISTS reviewed_by INTEGER REFERENCES users(id),
   ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP,
   ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
   ADD COLUMN IF NOT EXISTS fulfilled_at TIMESTAMP,
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE batches
+  ADD COLUMN IF NOT EXISTS batch_unit VARCHAR(20) DEFAULT 'kg';
+
+UPDATE batches
+SET batch_unit = COALESCE(NULLIF(TRIM(batch_unit), ''), 'kg')
+WHERE batch_unit IS NULL OR TRIM(batch_unit) = '';
+
+ALTER TABLE batches
+  ALTER COLUMN batch_unit SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_buyer_id ON purchase_orders(buyer_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_batch_id ON purchase_orders(batch_id);
@@ -48,7 +60,15 @@ SET delivery_location = COALESCE(delivery_location, 'Pending delivery location')
 WHERE delivery_location IS NULL OR preferred_delivery_date IS NULL;
 
 ALTER TABLE purchase_orders
+  ALTER COLUMN requested_unit SET DEFAULT 'kg';
+
+UPDATE purchase_orders
+SET requested_unit = COALESCE(NULLIF(TRIM(requested_unit), ''), 'kg')
+WHERE requested_unit IS NULL OR TRIM(requested_unit) = '';
+
+ALTER TABLE purchase_orders
   ALTER COLUMN delivery_location SET NOT NULL,
+  ALTER COLUMN requested_unit SET NOT NULL,
   ALTER COLUMN preferred_delivery_date SET NOT NULL;
 
 DROP INDEX IF EXISTS uq_purchase_orders_active_buyer_batch;

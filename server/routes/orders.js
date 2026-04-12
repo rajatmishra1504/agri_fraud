@@ -18,6 +18,10 @@ function isMissingPurchaseOrdersTable(error) {
   return error?.code === '42P01' && /purchase_orders/i.test(error?.message || '');
 }
 
+function normalizeUnit(unitValue) {
+  return String(unitValue || '').trim().toLowerCase();
+}
+
 function buildOrderQuery(whereClause = '', includeWhere = false) {
   return `SELECT po.*, b.batch_number, b.product_type, b.farm_name, b.farm_location as pickup_location, b.quality_grade,
                  buyer.name as buyer_name,
@@ -48,6 +52,7 @@ router.post('/',
       const {
         batch_id,
         requested_quantity_kg,
+        requested_unit,
         notes,
         delivery_location,
         preferred_delivery_date,
@@ -76,9 +81,10 @@ router.post('/',
       await client.query('BEGIN');
 
       const batchResult = await client.query(
-        `SELECT id, batch_number, product_type, quantity_kg
+        `SELECT id, batch_number, product_type, quantity_kg, COALESCE(batch_unit, 'kg') as batch_unit
          FROM batches
-         WHERE id = $1`,
+         WHERE id = $1
+         FOR UPDATE`,
         [batch_id]
       );
 
@@ -102,15 +108,46 @@ router.post('/',
       }
 
       const requestedQty = Number(requested_quantity_kg || batchResult.rows[0].quantity_kg);
+      const batchUnit = normalizeUnit(batchResult.rows[0].batch_unit);
+      const normalizedRequestedUnit = normalizeUnit(requested_unit || batchUnit);
 
       if (!Number.isFinite(requestedQty) || requestedQty <= 0) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'requested_quantity_kg must be a positive number' });
       }
 
+      if (!normalizedRequestedUnit) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'requested_unit is required' });
+      }
+
+      if (normalizedRequestedUnit !== batchUnit) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `requested_unit must match the batch unit (${batchUnit})` });
+      }
+
       if (requestedQty > Number(batchResult.rows[0].quantity_kg)) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'requested_quantity_kg cannot exceed batch quantity' });
+      }
+
+      const allocationResult = await client.query(
+        `SELECT COALESCE(SUM(requested_quantity_kg), 0) as allocated_quantity_kg
+         FROM purchase_orders
+         WHERE batch_id = $1
+           AND status IN ('REQUESTED', 'APPROVED', 'FULFILLED')`,
+        [batch_id]
+      );
+
+      const batchQuantity = Number(batchResult.rows[0].quantity_kg);
+      const allocatedQuantity = Number(allocationResult.rows[0].allocated_quantity_kg || 0);
+      const availableQuantity = Math.max(batchQuantity - allocatedQuantity, 0);
+
+      if (requestedQty > availableQuantity) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `Only ${availableQuantity.toFixed(2)} kg is currently available for this batch`
+        });
       }
 
       const normalizedDeliveryLocation = String(delivery_location).trim();
@@ -127,19 +164,21 @@ router.post('/',
          WHERE buyer_id = $1
            AND batch_id = $2
            AND requested_quantity_kg = $3
-           AND delivery_location = $4
-           AND preferred_delivery_date = $5
-           AND COALESCE(delivery_contact_name, '') = COALESCE($6, '')
-           AND COALESCE(delivery_contact_phone, '') = COALESCE($7, '')
-           AND COALESCE(delivery_instructions, '') = COALESCE($8, '')
-           AND COALESCE(notes, '') = COALESCE($9, '')
-           AND created_at >= NOW() - ($10::text || ' seconds')::interval
+           AND COALESCE(requested_unit, '') = $4
+           AND delivery_location = $5
+           AND preferred_delivery_date = $6
+           AND COALESCE(delivery_contact_name, '') = COALESCE($7, '')
+           AND COALESCE(delivery_contact_phone, '') = COALESCE($8, '')
+           AND COALESCE(delivery_instructions, '') = COALESCE($9, '')
+           AND COALESCE(notes, '') = COALESCE($10, '')
+           AND created_at >= NOW() - ($11::text || ' seconds')::interval
          ORDER BY created_at DESC
          LIMIT 1`,
         [
           req.user.id,
           batch_id,
           requestedQty,
+          normalizedRequestedUnit,
           normalizedDeliveryLocation,
           preferredDateIso,
           normalizedDeliveryContactName,
@@ -164,6 +203,7 @@ router.post('/',
            buyer_id,
            batch_id,
            requested_quantity_kg,
+           requested_unit,
            delivery_location,
            preferred_delivery_date,
            delivery_contact_name,
@@ -172,13 +212,14 @@ router.post('/',
            notes,
            status
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'REQUESTED')
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'REQUESTED')
          RETURNING *`,
         [
           `ORD-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`,
           req.user.id,
           batch_id,
           requestedQty,
+          normalizedRequestedUnit,
           normalizedDeliveryLocation,
           preferredDateIso,
           normalizedDeliveryContactName,

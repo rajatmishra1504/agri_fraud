@@ -5,6 +5,7 @@ const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const auditLog = require('../middleware/auditLog');
 
 const ALLOWED_STATUSES = ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'];
+const WEIGHT_CHANGE_THRESHOLD = Number(process.env.WEIGHT_CHANGE_THRESHOLD || 15);
 
 router.get('/queue',
   authenticateToken,
@@ -178,7 +179,7 @@ router.post('/',
 
 router.put('/:id',
   authenticateToken,
-  authorizeRoles('transporter', 'admin'),
+  authorizeRoles('transporter', 'admin', 'fraud_analyst'),
   auditLog('UPDATE_SHIPMENT', 'shipment'),
   async (req, res) => {
     const client = await pool.connect();
@@ -192,11 +193,19 @@ router.put('/:id',
         current_location,
         expected_delivery_date,
         delivery_notes,
-        delivered_to_name
+        delivered_to_name,
+        fraud_reason
       } = req.body;
 
       if (!status || !ALLOWED_STATUSES.includes(status)) {
         return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(', ')}` });
+      }
+
+      const hasWeightUpdate = weight_kg !== undefined && weight_kg !== null && weight_kg !== '';
+      const normalizedWeight = hasWeightUpdate ? Number(weight_kg) : null;
+
+      if (hasWeightUpdate && (!Number.isFinite(normalizedWeight) || normalizedWeight <= 0)) {
+        return res.status(400).json({ error: 'weight_kg must be a positive number' });
       }
 
       await client.query('BEGIN');
@@ -212,9 +221,81 @@ router.put('/:id',
       }
 
       const shipment = shipmentResult.rows[0];
-      if (req.user.role === 'transporter' && shipment.transporter_id !== req.user.id) {
+      let claimedTransporterId = null;
+
+      if (shipment.status === 'CANCELLED') {
         await client.query('ROLLBACK');
-        return res.status(403).json({ error: 'You can only update your own shipments' });
+        return res.status(403).json({ error: 'Cancelled shipments are locked and cannot be modified.' });
+      }
+
+      if (req.user.role === 'transporter' && shipment.status === 'DELIVERED') {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Delivered shipments are locked. Transporter cannot modify transit fields after delivery.' });
+      }
+
+      if (req.user.role === 'fraud_analyst') {
+        if (status !== 'CANCELLED') {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ error: 'Fraud analyst can only update shipment status to CANCELLED' });
+        }
+
+        const reason = (fraud_reason || delivery_notes || '').toString().trim();
+        if (!reason) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Fraud reason is required to cancel shipment as fraudulent act' });
+        }
+
+        const analystNote = `FRAUDULENT ACT: ${reason}`;
+
+        const cancelledResult = await client.query(
+          `UPDATE shipments
+           SET status = 'CANCELLED'::shipment_status,
+               delivery_notes = CASE
+                 WHEN delivery_notes IS NULL OR delivery_notes = '' THEN $1
+                 ELSE delivery_notes || ' | ' || $1
+               END,
+               updated_at = NOW()
+           WHERE id = $2
+           RETURNING *`,
+          [analystNote, id]
+        );
+
+        await client.query(
+          `INSERT INTO fraud_flags (
+            flag_type, severity, batch_id, shipment_id, evidence_json, description
+          ) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            'ANALYST_FRAUD_CANCELLATION',
+            'HIGH',
+            shipment.batch_id,
+            shipment.id,
+            JSON.stringify({
+              analyst_user_id: req.user.id,
+              reason,
+              previous_status: shipment.status,
+              new_status: 'CANCELLED'
+            }),
+            'Shipment cancelled by fraud analyst due to fraudulent act.'
+          ]
+        );
+
+        await client.query('COMMIT');
+
+        return res.json({
+          message: 'Shipment cancelled due to fraudulent act',
+          shipment: cancelledResult.rows[0]
+        });
+      }
+
+      if (req.user.role === 'transporter') {
+        const requesterId = Number(req.user.id);
+        if (!['PENDING', 'IN_TRANSIT'].includes(shipment.status)) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ error: 'Transporter can only update shipments in PENDING or IN_TRANSIT state.' });
+        }
+
+        // Active transport ownership follows the latest transporter who updates transit details.
+        claimedTransporterId = requesterId;
       }
 
       const updateResult = await client.query(
@@ -232,20 +313,53 @@ router.put('/:id',
              current_location = COALESCE($4, current_location),
              expected_delivery_date = COALESCE($5::date, expected_delivery_date),
              delivery_notes = COALESCE($6, delivery_notes),
-             delivered_to_name = COALESCE($7, delivered_to_name)
-         WHERE id = $8
+             delivered_to_name = COALESCE($7, delivered_to_name),
+             transporter_id = COALESCE($8::integer, transporter_id),
+             updated_at = NOW()
+         WHERE id = $9
          RETURNING *`,
         [
           status,
           delivered_at || null,
-          weight_kg || null,
+          normalizedWeight,
           current_location || null,
           expected_delivery_date || null,
           delivery_notes || null,
           delivered_to_name || null,
+          claimedTransporterId,
           id
         ]
       );
+
+      if (hasWeightUpdate) {
+        const previousWeight = Number(shipment.weight_kg);
+        if (Number.isFinite(previousWeight) && previousWeight > 0) {
+          const deltaPct = (Math.abs(normalizedWeight - previousWeight) / previousWeight) * 100;
+
+          if (deltaPct >= WEIGHT_CHANGE_THRESHOLD) {
+            const severity = deltaPct >= 30 ? 'HIGH' : 'MEDIUM';
+            await client.query(
+              `INSERT INTO fraud_flags (
+                 flag_type, severity, batch_id, shipment_id, evidence_json, description
+               ) VALUES ($1, $2, $3, $4, $5, $6)`,
+              [
+                'ABNORMAL_WEIGHT_CHANGE',
+                severity,
+                shipment.batch_id,
+                shipment.id,
+                JSON.stringify({
+                  previous_weight_kg: previousWeight,
+                  updated_weight_kg: normalizedWeight,
+                  change_percent: Number(deltaPct.toFixed(2)),
+                  threshold_percent: WEIGHT_CHANGE_THRESHOLD,
+                  changed_by_user_id: req.user.id
+                }),
+                `Shipment weight changed by ${deltaPct.toFixed(2)}%, exceeding ${WEIGHT_CHANGE_THRESHOLD}% threshold.`
+              ]
+            );
+          }
+        }
+      }
 
       if (status === 'DELIVERED') {
         if (shipment.order_id) {
@@ -308,7 +422,7 @@ router.get('/',
       const whereParts = [];
 
       if (req.user.role === 'transporter') {
-        whereParts.push(`s.transporter_id = $${params.length + 1}`);
+        whereParts.push(`(s.status IN ('PENDING', 'IN_TRANSIT') OR s.transporter_id = $${params.length + 1})`);
         params.push(req.user.id);
       }
 
@@ -346,6 +460,8 @@ router.post('/:id/status',
   authenticateToken,
   authorizeRoles('transporter', 'admin'),
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
       const { id } = req.params;
       const { status } = req.body;
@@ -356,7 +472,46 @@ router.post('/:id/status',
         });
       }
 
-      const result = await pool.query(
+      await client.query('BEGIN');
+
+      const shipmentResult = await client.query(
+        'SELECT id, transporter_id FROM shipments WHERE id = $1 FOR UPDATE',
+        [id]
+      );
+
+      if (shipmentResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Shipment not found' });
+      }
+
+      const shipment = shipmentResult.rows[0];
+      if (shipment.status === 'CANCELLED') {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Cancelled shipments are locked and cannot be modified.' });
+      }
+
+      if (req.user.role === 'transporter') {
+        const requesterId = Number(req.user.id);
+
+        if (shipment.status === 'DELIVERED' && status !== 'DELIVERED') {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ error: 'Delivered shipments are locked. Transporter cannot change status after delivery.' });
+        }
+
+        if (!['PENDING', 'IN_TRANSIT'].includes(shipment.status)) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ error: 'Transporter can only update shipments in PENDING or IN_TRANSIT state.' });
+        }
+
+        await client.query(
+          `UPDATE shipments
+           SET transporter_id = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [requesterId, id]
+        );
+      }
+
+      const result = await client.query(
         `UPDATE shipments
          SET status = $1::shipment_status,
            delivered_at = CASE WHEN $1::text = 'DELIVERED' THEN COALESCE(delivered_at, NOW()) ELSE delivered_at END,
@@ -366,14 +521,15 @@ router.post('/:id/status',
         [status, id]
       );
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Shipment not found' });
-      }
+      await client.query('COMMIT');
 
       res.json(result.rows[0]);
     } catch (err) {
+      await client.query('ROLLBACK');
       console.log(err);
       res.status(500).json({ error: 'Update failed' });
+    } finally {
+      client.release();
     }
   }
 );

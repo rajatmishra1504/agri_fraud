@@ -12,6 +12,13 @@ const path = require('path');
 const fs = require('fs');
 const uploadDir = 'uploads/certificates/';
 
+function resolveFileUrl(req, filePath) {
+  if (!filePath) return null;
+  if (/^https?:\/\//i.test(filePath)) return filePath;
+  const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+  return `${req.protocol}://${req.get('host')}${normalizedPath}`;
+}
+
 // Ensure upload directory exists
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -91,7 +98,8 @@ router.post('/',
         message: 'Certificate issued successfully',
         certificate: {
           ...result.rows[0],
-          qr_code_image: qrCodeUrl
+          qr_code_image: qrCodeUrl,
+          certificate_pdf_url: resolveFileUrl(req, result.rows[0].pdf_url)
         }
       });
     } catch (error) {
@@ -144,7 +152,8 @@ router.get('/', authenticateToken, async (req, res) => {
 
         return {
           ...cert,
-          qr_code_image: qrImage
+          qr_code_image: qrImage,
+          certificate_pdf_url: resolveFileUrl(req, cert.pdf_url)
         };
       })
     );
@@ -185,7 +194,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
     
     res.json({
       ...result.rows[0],
-      qr_code_image: qrCodeUrl
+      qr_code_image: qrCodeUrl,
+      certificate_pdf_url: resolveFileUrl(req, result.rows[0].pdf_url)
     });
   } catch (error) {
     console.error('Get certificate error:', error);

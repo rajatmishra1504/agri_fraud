@@ -11,6 +11,22 @@ router.get('/', authenticateToken, async (req, res) => {
     
     let query = `
       SELECT b.*, u.name as inspector_name,
+             COALESCE(b.batch_unit, 'kg') as batch_unit,
+             COALESCE((
+               SELECT SUM(po.requested_quantity_kg)
+               FROM purchase_orders po
+               WHERE po.batch_id = b.id
+                 AND po.status IN ('REQUESTED', 'APPROVED', 'FULFILLED')
+             ), 0) as allocated_quantity_kg,
+             GREATEST(
+               b.quantity_kg - COALESCE((
+                 SELECT SUM(po.requested_quantity_kg)
+                 FROM purchase_orders po
+                 WHERE po.batch_id = b.id
+                   AND po.status IN ('REQUESTED', 'APPROVED', 'FULFILLED')
+               ), 0),
+               0
+             ) as available_quantity_kg,
              COUNT(DISTINCT c.id) as certificate_count,
              COUNT(DISTINCT s.id) as shipment_count
       FROM batches b
@@ -117,9 +133,16 @@ router.post('/',
         farm_location,
         product_type,
         quantity_kg,
+        batch_unit,
         harvest_date,
         quality_grade
       } = req.body;
+
+      const normalizedUnit = String(batch_unit || 'kg').trim().toLowerCase();
+
+      if (!normalizedUnit) {
+        return res.status(400).json({ error: 'batch_unit is required' });
+      }
       
       // Generate batch number
       const batchNumber = `BATCH-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
@@ -127,9 +150,9 @@ router.post('/',
       const result = await pool.query(`
         INSERT INTO batches (
           batch_number, farm_name, farm_location, product_type,
-          quantity_kg, harvest_date, quality_grade, created_by
+          quantity_kg, batch_unit, harvest_date, quality_grade, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
       `, [
         batchNumber,
@@ -137,6 +160,7 @@ router.post('/',
         farm_location,
         product_type,
         quantity_kg,
+        normalizedUnit,
         harvest_date,
         quality_grade,
         req.user.id

@@ -33,13 +33,13 @@ async function seed() {
     
     // Create sample batches
     const batches = await client.query(`
-      INSERT INTO batches (batch_number, farm_name, farm_location, product_type, quantity_kg, harvest_date, quality_grade, created_by)
+      INSERT INTO batches (batch_number, farm_name, farm_location, product_type, quantity_kg, batch_unit, harvest_date, quality_grade, created_by)
       VALUES 
-        ('BATCH-2024-001', 'Green Valley Farm', 'Punjab, India', 'Wheat', 5000.00, '2024-01-15', 'A', $1),
-        ('BATCH-2024-002', 'Sunrise Orchards', 'Maharashtra, India', 'Rice', 3000.00, '2024-01-20', 'A+', $1),
-        ('BATCH-2024-003', 'Golden Fields', 'Haryana, India', 'Corn', 4500.00, '2024-02-01', 'B', $1),
-        ('BATCH-2024-004', 'Fresh Harvest Co', 'Karnataka, India', 'Tomatoes', 2000.00, '2024-02-10', 'A', $1),
-        ('BATCH-2024-005', 'Organic Valley', 'Kerala, India', 'Coconut', 1500.00, '2024-02-15', 'A+', $1)
+        ('BATCH-2024-001', 'Green Valley Farm', 'Punjab, India', 'Wheat', 5000.00, 'kg', '2024-01-15', 'A', $1),
+        ('BATCH-2024-002', 'Sunrise Orchards', 'Maharashtra, India', 'Rice', 3000.00, 'kg', '2024-01-20', 'A+', $1),
+        ('BATCH-2024-003', 'Golden Fields', 'Haryana, India', 'Corn', 4500.00, 'kg', '2024-02-01', 'B', $1),
+        ('BATCH-2024-004', 'Fresh Harvest Co', 'Karnataka, India', 'Tomatoes', 2000.00, 'kg', '2024-02-10', 'A', $1),
+        ('BATCH-2024-005', 'Organic Valley', 'Kerala, India', 'Coconut', 1500.00, 'kg', '2024-02-15', 'A+', $1)
       RETURNING id
     `, [inspectorId]);
     
@@ -75,13 +75,14 @@ async function seed() {
     // Create sample purchase request
     await client.query(`
       INSERT INTO purchase_orders (
-        order_number, buyer_id, batch_id, requested_quantity_kg,
+        order_number, buyer_id, batch_id, requested_quantity_kg, requested_unit,
         delivery_location, preferred_delivery_date,
         delivery_contact_name, delivery_contact_phone, delivery_instructions,
         notes, status
       )
       VALUES (
         $1, $2, 1, 1000.00,
+        'kg',
         'Delhi Central Warehouse', CURRENT_DATE + INTERVAL '5 days',
         'Bob Buyer', '+911234567890', 'Call 30 mins before arrival',
         'Initial buyer request for wheat stock', 'REQUESTED'
