@@ -1604,6 +1604,18 @@ function ShipmentsPage({ user }) {
                       />
                     </div>
                     <div>
+                      <label>Weight (kg)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={draft.weight_kg}
+                        disabled={!canManageShipments}
+                        onChange={(e) => updateShipmentDraft(s.id, 'weight_kg', e.target.value)}
+                        placeholder="Current total weight"
+                        title="Record final weight upon delivery to detect skimming"
+                      />
+                    </div>
+                    <div>
                       <label>Current Location</label>
                       <input
                         type="text"
