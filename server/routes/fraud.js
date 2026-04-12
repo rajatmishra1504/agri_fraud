@@ -5,9 +5,16 @@ const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const fraudEngine = require('../services/fraudDetection');
 
 
+const NodeCache = require('node-cache');
+const dashboardCache = new NodeCache({ stdTTL: 300 }); // Cache for 5 minutes
+
 // Get fraud dashboard stats
 router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
+    const cachedStats = dashboardCache.get('fraudStats');
+    if (cachedStats) {
+      return res.json(cachedStats);
+    }
 
     const stats = await pool.query(`
       SELECT 
@@ -43,10 +50,14 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     `);
 
 
-    res.json({
+    const payload = {
       statistics: stats.rows[0],
       recent_flags: recentFlags.rows
-    });
+    };
+    
+    dashboardCache.set('fraudStats', payload);
+
+    res.json(payload);
 
   } catch (error) {
     console.error('Dashboard error:', error);
