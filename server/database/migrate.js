@@ -28,6 +28,13 @@ DROP TABLE IF EXISTS batches CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 -- Create ENUM types
+DROP TYPE IF EXISTS user_role CASCADE;
+DROP TYPE IF EXISTS flag_severity CASCADE;
+DROP TYPE IF EXISTS flag_status CASCADE;
+DROP TYPE IF EXISTS case_decision CASCADE;
+DROP TYPE IF EXISTS shipment_status CASCADE;
+DROP TYPE IF EXISTS order_status CASCADE;
+
 CREATE TYPE user_role AS ENUM ('inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin');
 CREATE TYPE flag_severity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
 CREATE TYPE flag_status AS ENUM ('OPEN', 'INVESTIGATING', 'CLOSED');
