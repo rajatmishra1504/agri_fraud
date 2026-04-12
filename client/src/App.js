@@ -175,6 +175,7 @@ function Login({ setUser }) {
                 <option value="inspector">Inspector</option>
                 <option value="transporter">Transporter</option>
                 <option value="fraud_analyst">Fraud Analyst</option>
+                <option value="admin">Admin</option>
               </select>
             </>
           )}
