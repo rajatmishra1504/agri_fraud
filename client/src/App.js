@@ -1912,10 +1912,43 @@ function OrdersPage({ user }) {
 
 function CaseList({ user }) {
   const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadCases = useCallback(async () => {
+    try {
+      const res = await api.get('/cases');
+      setCases(res.data.cases || []);
+    } catch (err) {
+      alert('Failed to load cases');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    api.get('/cases').then(res => setCases(res.data.cases));
-  }, []);
+    loadCases();
+  }, [loadCases]);
+
+  const handleCloseCase = async (caseId) => {
+    const decision = window.prompt('Enter decision (FRAUD or NOT_FRAUD):', 'FRAUD');
+    if (!decision) return;
+    
+    const reason = window.prompt('Enter reason for this decision:');
+    if (!reason) return;
+
+    try {
+      await api.post(`/cases/${caseId}/close`, {
+        decision: decision.toUpperCase(),
+        decision_reason: reason
+      });
+      alert('Case resolved successfully');
+      loadCases();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to close case');
+    }
+  };
+
+  if (loading) return <div className="loading">Loading cases...</div>;
 
   return (
     <div className="page-container">
@@ -1934,6 +1967,7 @@ function CaseList({ user }) {
               <th>Priority</th>
               <th>Decision</th>
               <th>Created</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1953,6 +1987,19 @@ function CaseList({ user }) {
                   </span>
                 </td>
                 <td>{new Date(c.created_at).toLocaleDateString()}</td>
+                <td>
+                  {c.decision === 'PENDING' && (
+                    <button 
+                      className="btn-primary" 
+                      onClick={() => handleCloseCase(c.id)}
+                    >
+                      Resolve
+                    </button>
+                  )}
+                  {c.decision !== 'PENDING' && (
+                    <div className="buyer-mini-text">Resolved</div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
