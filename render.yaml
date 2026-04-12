@@ -18,6 +18,8 @@ services:
         value: 5000
       - key: CI
         value: "false"
+      - key: FRONTEND_URL
+        value: https://agri-fraud-server.onrender.com
     autoDeploy: true
 
 databases:
