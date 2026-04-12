@@ -247,14 +247,41 @@ router.put('/:id',
         ]
       );
 
-      if (status === 'DELIVERED' && shipment.order_id) {
-        await client.query(
-          `UPDATE purchase_orders
-           SET status = 'FULFILLED',
-               fulfilled_at = COALESCE(fulfilled_at, NOW())
-           WHERE id = $1 AND status = 'APPROVED'`,
-          [shipment.order_id]
-        );
+      if (status === 'DELIVERED') {
+        if (shipment.order_id) {
+          await client.query(
+            `UPDATE purchase_orders
+             SET status = 'FULFILLED',
+                 fulfilled_at = COALESCE(fulfilled_at, NOW())
+             WHERE id = $1 AND status = 'APPROVED'`,
+            [shipment.order_id]
+          );
+        }
+
+        // --- MACHINE LEARNING FRAUD DETECTION ---
+        const mlEngine = require('../services/machineLearning');
+        const finalShipmentData = updateResult.rows[0];
+        
+        // Pass to the Random Forest model
+        const mlAnalysis = mlEngine.evaluateShipment(finalShipmentData);
+        
+        if (mlAnalysis.isAnomaly) {
+            console.log('🚨 ML Engine detected an anomaly! Creating CRITICAL Fraud Flag...', mlAnalysis.features);
+            
+            await client.query(
+              `INSERT INTO fraud_flags (
+                flag_type, severity, batch_id, shipment_id, evidence_json, description
+              ) VALUES ($1, $2, $3, $4, $5, $6)`,
+              [
+                'ML_PATTERN_ANOMALY',
+                'CRITICAL',
+                finalShipmentData.batch_id,
+                finalShipmentData.id,
+                JSON.stringify(mlAnalysis.features),
+                'Machine Learning model detected suspicious multi-variate correlations in this shipment (distance vs time vs weight loss).'
+              ]
+            );
+        }
       }
 
       await client.query('COMMIT');
