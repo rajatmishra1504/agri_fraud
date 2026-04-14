@@ -10,6 +10,9 @@ require('dotenv').config();
 const app = express();
 const isDevelopment = (process.env.NODE_ENV || 'development') === 'development';
 
+// Trust proxy if behind a load balancer
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet());
 app.use(cors({
