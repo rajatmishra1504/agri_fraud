@@ -47,6 +47,7 @@ app.use('/api/fraud', require('./routes/fraud'));
 app.use('/api/cases', require('./routes/cases'));
 app.use('/api/audit', require('./routes/audit'));
 app.use('/api/verify', require('./routes/verify'));
+app.use('/api/weather', require('./routes/weather'));
 
 // Health check
 app.get('/health', (req, res) => {

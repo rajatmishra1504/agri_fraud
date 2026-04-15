@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle, XCircle, ShieldAlert, Package, FileText, Tr
 import { QRCodeSVG } from 'qrcode.react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import appLogo from './assets/app-logo.svg';
+import REVIEWER_IMAGES from './reviewerImages';
 import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
@@ -316,35 +317,35 @@ function Login({ setUser }) {
       name: 'Riya 💫',
       role: 'Procurement Lead, GreenMart',
       quote: 'AgriFraud Detector helped us cut supplier verification time by more than half.',
-      image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80',
+      image: REVIEWER_IMAGES['Riya'],
       rating: 5,
     },
     {
       name: 'Rajat',
       role: 'Quality Inspector, FarmLink',
       quote: 'Shipment timelines and certificate tracing are crystal clear for every batch.',
-      image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=160&q=80',
+      image: REVIEWER_IMAGES['Rajat'],
       rating: 5,
     },
     {
       name: 'Sai varma',
       role: 'Operations Head, AgroSync',
       quote: 'The fraud alerts are practical and actionable. Our analysts trust the dashboard daily.',
-      image: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=160&q=80',
+      image: REVIEWER_IMAGES['Sai varma'],
       rating: 4,
     },
     {
       name: 'Sukram',
       role: 'Buyer, FreshCity Retail',
       quote: 'I can verify a certificate in seconds before placing a large purchase order.',
-      image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80',
+      image: REVIEWER_IMAGES['Sukram'],
       rating: 5,
     },
     {
       name: 'Himanshu',
       role: 'Logistics Coordinator, AgroRoute',
       quote: 'The shipment history timeline reduced confusion across transporter handovers.',
-      image: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=160&q=80',
+      image: REVIEWER_IMAGES['Himanshu'],
       rating: 4,
     },
   ];
@@ -381,8 +382,7 @@ function Login({ setUser }) {
     setWeatherError('');
 
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.latitude}&longitude=${city.longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max,sunrise,sunset&timezone=auto&forecast_days=5`;
-      const response = await fetch(url);
+      const response = await fetch(`${API_URL}/weather/forecast?latitude=${city.latitude}&longitude=${city.longitude}`);
       if (!response.ok) throw new Error('Failed weather response');
 
       const data = await response.json();
@@ -427,7 +427,7 @@ function Login({ setUser }) {
 
     try {
       setWeatherError('');
-      const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`);
+      const geoRes = await fetch(`${API_URL}/weather/search?query=${encodeURIComponent(query)}`);
       if (!geoRes.ok) throw new Error('Failed city lookup');
       const geoData = await geoRes.json();
       const cityResult = geoData?.results?.[0];
@@ -541,7 +541,11 @@ function Login({ setUser }) {
                   {reviews.map((review, idx) => (
                     <article key={`${review.name}-${idx}`} className="review-item review-slide p-3">
                       <div className="d-flex gap-3 align-items-start">
-                        <img src={review.image} alt={`${review.name} review`} className="review-avatar" />
+                        <img 
+                          src={review.image} 
+                          alt={`${review.name} review`} 
+                          className="review-avatar"
+                        />
                         <div>
                           <h6 className="mb-1">{review.name}</h6>
                           <p className="review-role mb-2">{review.role}</p>
