@@ -5,7 +5,6 @@ import { AlertTriangle, CheckCircle, XCircle, ShieldAlert, Package, FileText, Tr
 import { QRCodeSVG } from 'qrcode.react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import appLogo from './assets/app-logo.svg';
-import REVIEWER_IMAGES from './reviewerImages';
 import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
@@ -317,35 +316,35 @@ function Login({ setUser }) {
       name: 'Riya 💫',
       role: 'Procurement Lead, GreenMart',
       quote: 'AgriFraud Detector helped us cut supplier verification time by more than half.',
-      image: REVIEWER_IMAGES['Riya'],
+      image: `${API_URL}/reviewer-images/riya`,
       rating: 5,
     },
     {
       name: 'Rajat',
       role: 'Quality Inspector, FarmLink',
       quote: 'Shipment timelines and certificate tracing are crystal clear for every batch.',
-      image: REVIEWER_IMAGES['Rajat'],
+      image: `${API_URL}/reviewer-images/rajat`,
       rating: 5,
     },
     {
       name: 'Sai varma',
       role: 'Operations Head, AgroSync',
       quote: 'The fraud alerts are practical and actionable. Our analysts trust the dashboard daily.',
-      image: REVIEWER_IMAGES['Sai varma'],
+      image: `${API_URL}/reviewer-images/saivarma`,
       rating: 4,
     },
     {
       name: 'Sukram',
       role: 'Buyer, FreshCity Retail',
       quote: 'I can verify a certificate in seconds before placing a large purchase order.',
-      image: REVIEWER_IMAGES['Sukram'],
+      image: `${API_URL}/reviewer-images/sukram`,
       rating: 5,
     },
     {
       name: 'Himanshu',
       role: 'Logistics Coordinator, AgroRoute',
       quote: 'The shipment history timeline reduced confusion across transporter handovers.',
-      image: REVIEWER_IMAGES['Himanshu'],
+      image: `${API_URL}/reviewer-images/himanshu`,
       rating: 4,
     },
   ];
