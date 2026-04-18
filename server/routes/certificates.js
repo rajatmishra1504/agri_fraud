@@ -76,7 +76,7 @@ router.post('/',
       
       // Generate certificate number and hash
       const certNumber = `CERT-${batch_id}-${Date.now()}`;
-      const pdfUrl = req.file ? `/uploads/certificates/${req.file.filename}` : null;
+      let pdfUrl = req.file ? `/uploads/certificates/${req.file.filename}` : null;
       
       // Create certificate hash from batch data + timestamp
       const hashData = `${batch_id}-${certNumber}-${Date.now()}`;
@@ -84,7 +84,30 @@ router.post('/',
       
       // Generate QR code data
       const qrData = crypto.randomBytes(16).toString('hex');
-      const qrCodeUrl = await QRCode.toDataURL(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify/${qrData}`);
+      const qrLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify/${qrData}`;
+      const qrCodeUrl = await QRCode.toDataURL(qrLink);
+
+      // ✅ AUTOMATIC PDF GENERATION (If no file uploaded)
+      const { generateCertificatePdf } = require('../utils/pdfGenerator');
+      if (!pdfUrl) {
+        const autoPdfName = `auto-${certNumber}.pdf`;
+        const autoPdfPath = path.join(uploadDir, autoPdfName);
+        
+        await generateCertificatePdf({
+            cert_number: certNumber,
+            batch_number: batchResult.rows[0].batch_number,
+            product_type: batchResult.rows[0].product_type,
+            farm_name: batchResult.rows[0].farm_name,
+            farm_location: batchResult.rows[0].farm_location,
+            quantity_kg: batchResult.rows[0].quantity_kg,
+            batch_unit: batchResult.rows[0].batch_unit,
+            quality_grade: batchResult.rows[0].quality_grade,
+            inspector_notes: inspector_notes,
+            inspector_name: req.user.name
+        }, qrCodeUrl, autoPdfPath);
+
+        pdfUrl = `/uploads/certificates/${autoPdfName}`;
+      }
       
       const result = await pool.query(`
         INSERT INTO certificates (
