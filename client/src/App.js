@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useParams } from 'react-router-dom';
 import axios from 'axios';
-import { AlertTriangle, CheckCircle, XCircle, ShieldAlert, Package, FileText, Truck, Home, LogOut, Bell, Search, ShoppingCart, ScanLine, CloudSun, Wind, Droplets, Newspaper, Sparkles, ChevronLeft, ChevronRight, ExternalLink, X, LocateFixed, RefreshCw, ThermometerSun, Sunrise, Sunset, Mail, Twitter, Instagram } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle, ShieldAlert, Package, FileText, Truck, Home, LogOut, Bell, Search, ShoppingCart, ScanLine, Newspaper, Sparkles, ChevronLeft, ChevronRight, ExternalLink, X, RefreshCw, Mail, Twitter, Instagram } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import appLogo from './assets/app-logo.svg';
@@ -36,6 +36,127 @@ api.interceptors.request.use(config => {
 
 const normalizeUnit = (value) => String(value || '').trim().toLowerCase();
 
+const INDIAN_STATES = [
+  'Andhra Pradesh',
+  'Andaman and Nicobar Islands',
+  'Arunachal Pradesh',
+  'Assam',
+  'Bihar',
+  'Chandigarh',
+  'Chhattisgarh',
+  'Dadra and Nagar Haveli and Daman and Diu',
+  'Delhi',
+  'Goa',
+  'Gujarat',
+  'Haryana',
+  'Himachal Pradesh',
+  'Jammu and Kashmir',
+  'Jharkhand',
+  'Karnataka',
+  'Kerala',
+  'Ladakh',
+  'Lakshadweep',
+  'Madhya Pradesh',
+  'Maharashtra',
+  'Manipur',
+  'Meghalaya',
+  'Mizoram',
+  'Nagaland',
+  'Odisha',
+  'Punjab',
+  'Rajasthan',
+  'Sikkim',
+  'Tamil Nadu',
+  'Telangana',
+  'Tripura',
+  'Uttar Pradesh',
+  'Uttarakhand',
+  'West Bengal',
+  'Puducherry'
+];
+
+const STATE_ZONE_MAP = {
+  'Andhra Pradesh': 'South Zone',
+  'Andaman and Nicobar Islands': 'South Zone',
+  'Arunachal Pradesh': 'North-East Zone',
+  'Assam': 'North-East Zone',
+  'Bihar': 'East Zone',
+  'Chandigarh': 'North Zone',
+  'Chhattisgarh': 'Central Zone',
+  'Dadra and Nagar Haveli and Daman and Diu': 'West Zone',
+  'Delhi': 'North Zone',
+  'Goa': 'West Zone',
+  'Gujarat': 'West Zone',
+  'Haryana': 'North Zone',
+  'Himachal Pradesh': 'North Zone',
+  'Jammu and Kashmir': 'North Zone',
+  'Jharkhand': 'East Zone',
+  'Karnataka': 'South Zone',
+  'Kerala': 'South Zone',
+  'Ladakh': 'North Zone',
+  'Lakshadweep': 'South Zone',
+  'Madhya Pradesh': 'Central Zone',
+  'Maharashtra': 'West Zone',
+  'Manipur': 'North-East Zone',
+  'Meghalaya': 'North-East Zone',
+  'Mizoram': 'North-East Zone',
+  'Nagaland': 'North-East Zone',
+  'Odisha': 'East Zone',
+  'Punjab': 'North Zone',
+  'Rajasthan': 'North Zone',
+  'Sikkim': 'North-East Zone',
+  'Tamil Nadu': 'South Zone',
+  'Telangana': 'South Zone',
+  'Tripura': 'North-East Zone',
+  'Uttar Pradesh': 'North Zone',
+  'Uttarakhand': 'North Zone',
+  'West Bengal': 'East Zone',
+  'Puducherry': 'South Zone'
+};
+
+const normalizeLocationText = (value) => String(value || '').trim();
+
+const toStateOrZoneTerms = (value) => {
+  const normalizedValue = normalizeLocationText(value);
+  if (!normalizedValue) return [];
+
+  const terms = new Set([normalizedValue]);
+  const mappedZone = STATE_ZONE_MAP[normalizedValue];
+  if (mappedZone) {
+    terms.add(mappedZone);
+  }
+
+  return Array.from(terms);
+};
+
+const mergeAndRankTransporters = (responses) => {
+  const merged = new Map();
+
+  responses.forEach((response) => {
+    (response?.data?.transporters || []).forEach((transporter) => {
+      if (!merged.has(transporter.id)) {
+        merged.set(transporter.id, transporter);
+      }
+    });
+  });
+
+  return Array.from(merged.values()).sort((left, right) => {
+    const ratingDifference = Number(right.effective_rating ?? right.rating ?? 0) - Number(left.effective_rating ?? left.rating ?? 0);
+    if (ratingDifference !== 0) return ratingDifference;
+
+    const ratingCountDifference = Number(right.rating_count || 0) - Number(left.rating_count || 0);
+    if (ratingCountDifference !== 0) return ratingCountDifference;
+
+    const shipmentDifference = Number(right.completed_shipments || 0) - Number(left.completed_shipments || 0);
+    if (shipmentDifference !== 0) return shipmentDifference;
+
+    return String(left.name || '').localeCompare(String(right.name || ''));
+  });
+};
+
+const getTransporterEffectiveRating = (transporter) => Number(transporter?.effective_rating ?? transporter?.rating ?? 5);
+const getTransporterFraudPenalty = (transporter) => Number(transporter?.fraud_penalty_points ?? 0);
+
 const formatQuantity = (value, unit) => {
   const numericValue = Number(value || 0);
   const safeUnit = String(unit || 'kg').trim();
@@ -43,40 +164,63 @@ const formatQuantity = (value, unit) => {
   return `${Number.isFinite(numericValue) ? numericValue.toLocaleString() : '0'} ${safeUnit}`;
 };
 
-const FEATURED_WEATHER_CITIES = [
-  { name: 'Delhi', latitude: 28.6139, longitude: 77.2090 },
-  { name: 'Pune', latitude: 18.5204, longitude: 73.8567 },
-  { name: 'Jaipur', latitude: 26.9124, longitude: 75.7873 },
-  { name: 'Lucknow', latitude: 26.8467, longitude: 80.9462 },
-];
-
-const getWeatherSummary = (weatherCode) => {
-  const code = Number(weatherCode);
-  if ([0, 1].includes(code)) return 'Clear';
-  if ([2, 3].includes(code)) return 'Cloudy';
-  if ([45, 48].includes(code)) return 'Fog';
-  if ([51, 53, 55, 56, 57].includes(code)) return 'Drizzle';
-  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return 'Rain';
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
-  if ([95, 96, 99].includes(code)) return 'Storm';
-  return 'Mixed';
-};
-
-const shortDayLabel = (dateValue) => {
-  const dateObj = new Date(dateValue);
-  if (Number.isNaN(dateObj.getTime())) return 'Day';
-  return dateObj.toLocaleDateString(undefined, { weekday: 'short' });
-};
-
-const formatHourMinute = (dateValue) => {
-  const dateObj = new Date(dateValue);
-  if (Number.isNaN(dateObj.getTime())) return '--:--';
-  return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
 const formatRating = (value) => {
   const numericValue = Number(value || 0);
   return Number.isFinite(numericValue) ? numericValue.toFixed(2) : '0.00';
+};
+
+const formatRelativeTime = (timestamp) => {
+  const timeValue = new Date(timestamp).getTime();
+  if (Number.isNaN(timeValue)) return 'just now';
+
+  const diffSeconds = Math.floor((Date.now() - timeValue) / 1000);
+  if (diffSeconds < 60) return 'just now';
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return new Date(timeValue).toLocaleDateString();
+};
+
+const getShipmentFraudReason = (shipment) => {
+  const caseReason = String(shipment?.fraud_case_reason || '').trim();
+  const orderReason = String(shipment?.order_rejection_reason || '').trim();
+  const notesSource = String(shipment?.delivery_notes || '').trim();
+  const combinedText = caseReason || orderReason || notesSource;
+
+  if (!combinedText) return '';
+
+  if (caseReason) {
+    return caseReason;
+  }
+
+  const fraudPrefixes = [
+    'FRAUDULENT ACT:',
+    'FRAUD AUTO-CANCELLATION:',
+    'Cancelled due to fraud flag:'
+  ];
+
+  for (const prefix of fraudPrefixes) {
+    if (combinedText.startsWith(prefix)) {
+      return combinedText.slice(prefix.length).trim();
+    }
+  }
+
+  if (orderReason) {
+    return orderReason;
+  }
+
+  if (/fraud/i.test(combinedText)) {
+    return combinedText;
+  }
+
+  return '';
 };
 
 const createLocalAvatarDataUri = (name) => {
@@ -284,18 +428,26 @@ function Login({ setUser }) {
   const [error, setError] = useState('');
   const [isRegister, setIsRegister] = useState(false);
   const [activeReviewIndex, setActiveReviewIndex] = useState(0);
-  const [weatherCity, setWeatherCity] = useState(FEATURED_WEATHER_CITIES[0]);
-  const [weatherSearch, setWeatherSearch] = useState('');
-  const [weatherData, setWeatherData] = useState(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [weatherError, setWeatherError] = useState('');
-  const [weatherUnit, setWeatherUnit] = useState('C');
-  const [weatherGeoLoading, setWeatherGeoLoading] = useState(false);
   const [selectedBlog, setSelectedBlog] = useState(null);
+  const [landingInsights, setLandingInsights] = useState({
+    available_batches: [],
+    fraud_pulse: {
+      open_flags: 0,
+      investigating_flags: 0,
+      high_critical_flags: 0,
+      pending_cases: 0,
+      refreshed_at: null,
+    },
+    recent_activity: [],
+  });
+  const [insightsLoading, setInsightsLoading] = useState(true);
+  const [insightsError, setInsightsError] = useState('');
+  const [activeInsightTab, setActiveInsightTab] = useState('batches');
   const [formData, setFormData] = useState({
     name: '',
-    organization: '',
     region: '',
+    transporter_source_state: '',
+    transporter_destination_states: [],
     role: 'buyer'
   });
 
@@ -341,35 +493,35 @@ function Login({ setUser }) {
       name: 'Riya 💫',
       role: 'Procurement Lead, GreenMart',
       quote: 'AgriFraud Detector helped us cut supplier verification time by more than half.',
-      image: `${API_URL}/reviewer-images/riya`,
+      image: `${API_URL}/reviewer-images/riya?v=2`,
       rating: 5,
     },
     {
       name: 'Rajat',
       role: 'Quality Inspector, FarmLink',
       quote: 'Shipment timelines and certificate tracing are crystal clear for every batch.',
-      image: `${API_URL}/reviewer-images/rajat`,
+      image: `${API_URL}/reviewer-images/rajat?v=2`,
       rating: 5,
     },
     {
       name: 'Sai varma',
       role: 'Operations Head, AgroSync',
       quote: 'The fraud alerts are practical and actionable. Our analysts trust the dashboard daily.',
-      image: `${API_URL}/reviewer-images/saivarma`,
+      image: `${API_URL}/reviewer-images/saivarma?v=2`,
       rating: 4,
     },
     {
       name: 'Sukram',
       role: 'Buyer, FreshCity Retail',
       quote: 'I can verify a certificate in seconds before placing a large purchase order.',
-      image: `${API_URL}/reviewer-images/sukram`,
+      image: `${API_URL}/reviewer-images/sukram?v=2`,
       rating: 5,
     },
     {
       name: 'Himanshu',
       role: 'Logistics Coordinator, AgroRoute',
       quote: 'The shipment history timeline reduced confusion across transporter handovers.',
-      image: `${API_URL}/reviewer-images/himanshu`,
+      image: `${API_URL}/reviewer-images/himanshu?v=2`,
       rating: 4,
     },
   ];
@@ -391,130 +543,69 @@ function Login({ setUser }) {
     return quote.length > 88 ? `${quote.slice(0, 85)}...` : quote;
   };
 
-  const toDisplayTemp = useCallback((value) => {
-    const numericValue = Number(value || 0);
-    if (weatherUnit === 'F') {
-      return Math.round((numericValue * 9) / 5 + 32);
-    }
-    return Math.round(numericValue);
-  }, [weatherUnit]);
-
-  const loadWeather = useCallback(async (city) => {
-    if (!city?.latitude || !city?.longitude) return;
-
-    setWeatherLoading(true);
-    setWeatherError('');
-
+  const loadLandingInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    setInsightsError('');
     try {
-      const response = await fetch(`${API_URL}/weather/forecast?latitude=${city.latitude}&longitude=${city.longitude}`);
-      if (!response.ok) throw new Error('Failed weather response');
-
+      const response = await fetch(`${API_URL}/public/landing-insights`);
+      if (!response.ok) {
+        throw new Error('Failed landing insights response');
+      }
       const data = await response.json();
-      const daily = Array.isArray(data?.daily?.time)
-        ? data.daily.time.slice(0, 4).map((timeValue, index) => ({
-            day: shortDayLabel(timeValue),
-            max: Math.round(Number(data.daily.temperature_2m_max?.[index] ?? 0)),
-            min: Math.round(Number(data.daily.temperature_2m_min?.[index] ?? 0)),
-            rainChance: Math.round(Number(data.daily.precipitation_probability_max?.[index] ?? 0)),
-            uvMax: Number(data.daily.uv_index_max?.[index] ?? 0).toFixed(1),
-            sunrise: formatHourMinute(data.daily.sunrise?.[index]),
-            sunset: formatHourMinute(data.daily.sunset?.[index]),
-          }))
-        : [];
-
-      setWeatherData({
-        cityName: city.name,
-        summary: getWeatherSummary(data?.current?.weather_code),
-        currentTemp: Math.round(Number(data?.current?.temperature_2m ?? 0)),
-        feelsLike: Math.round(Number(data?.current?.apparent_temperature ?? 0)),
-        humidity: Math.round(Number(data?.current?.relative_humidity_2m ?? 0)),
-        windSpeed: Math.round(Number(data?.current?.wind_speed_10m ?? 0)),
-        rainNow: Number(data?.current?.precipitation ?? 0).toFixed(1),
-        isDay: Number(data?.current?.is_day ?? 1) === 1,
-        daily,
+      setLandingInsights({
+        available_batches: Array.isArray(data.available_batches) ? data.available_batches : [],
+        fraud_pulse: {
+          open_flags: Number(data.fraud_pulse?.open_flags || 0),
+          investigating_flags: Number(data.fraud_pulse?.investigating_flags || 0),
+          high_critical_flags: Number(data.fraud_pulse?.high_critical_flags || 0),
+          pending_cases: Number(data.fraud_pulse?.pending_cases || 0),
+          refreshed_at: data.fraud_pulse?.refreshed_at || null,
+        },
+        recent_activity: Array.isArray(data.recent_activity) ? data.recent_activity : [],
       });
-    } catch (weatherFetchError) {
-      setWeatherError('Unable to load live weather now. Try another city.');
+    } catch (insightsFetchError) {
+      setInsightsError('Unable to load live supply insights right now.');
     } finally {
-      setWeatherLoading(false);
+      setInsightsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadWeather(weatherCity);
-  }, [weatherCity, loadWeather]);
-
-  const handleWeatherSearch = async (e) => {
-    e.preventDefault();
-    const query = weatherSearch.trim();
-    if (!query) return;
-
-    try {
-      setWeatherError('');
-      const geoRes = await fetch(`${API_URL}/weather/search?query=${encodeURIComponent(query)}`);
-      if (!geoRes.ok) throw new Error('Failed city lookup');
-      const geoData = await geoRes.json();
-      const cityResult = geoData?.results?.[0];
-      if (!cityResult) {
-        setWeatherError('City not found. Try a different spelling.');
-        return;
-      }
-
-      setWeatherCity({
-        name: cityResult.name,
-        latitude: cityResult.latitude,
-        longitude: cityResult.longitude,
-      });
-      setWeatherSearch('');
-    } catch (geoError) {
-      setWeatherError('Could not search city now. Please try again.');
-    }
-  };
-
-  const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setWeatherError('Geolocation is not supported on this browser.');
-      return;
-    }
-
-    setWeatherGeoLoading(true);
-    setWeatherError('');
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const latitude = position.coords.latitude;
-          const longitude = position.coords.longitude;
-
-          const reverseRes = await fetch(`${API_URL}/weather/reverse?latitude=${latitude}&longitude=${longitude}`);
-          const reverseData = reverseRes.ok ? await reverseRes.json() : null;
-          const cityResult = reverseData?.results?.[0];
-
-          setWeatherCity({
-            name: cityResult?.name || 'Current Location',
-            latitude,
-            longitude,
-          });
-        } catch (locationError) {
-          setWeatherError('Could not resolve your location weather.');
-        } finally {
-          setWeatherGeoLoading(false);
-        }
-      },
-      () => {
-        setWeatherGeoLoading(false);
-        setWeatherError('Location access denied. Please allow location permission.');
-      },
-      { enableHighAccuracy: false, timeout: 10000 }
-    );
-  };
+    loadLandingInsights();
+    const intervalId = window.setInterval(loadLandingInsights, 45000);
+    return () => window.clearInterval(intervalId);
+  }, [loadLandingInsights]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (isRegister && formData.role === 'transporter') {
+      if (!String(formData.transporter_source_state || '').trim()) {
+        setError('Please select a source state for transporter registration.');
+        return;
+      }
+
+      if (!Array.isArray(formData.transporter_destination_states) || formData.transporter_destination_states.length === 0) {
+        setError('Please select at least one destination state for transporter registration.');
+        return;
+      }
+    }
+
     try {
       const endpoint = isRegister ? '/auth/register' : '/auth/login';
-      const payload = isRegister ? { email, password, ...formData } : { email, password };
+      const payload = isRegister
+        ? {
+            email,
+            password,
+            ...formData,
+            transporter_source_state: formData.role === 'transporter' ? formData.transporter_source_state : undefined,
+            transporter_destination_states: formData.role === 'transporter' ? formData.transporter_destination_states : undefined,
+            region: formData.role === 'buyer'
+              ? undefined
+              : (formData.role === 'transporter' ? formData.transporter_source_state || formData.region : formData.region)
+          }
+        : { email, password };
       
       const response = await api.post(endpoint, payload);
       localStorage.setItem('token', response.data.token);
@@ -644,29 +735,30 @@ function Login({ setUser }) {
                 <form onSubmit={handleSubmit} className="login-form">
                   {isRegister && (
                     <>
+                      <label className="login-field-label" htmlFor="register-name">Full Name</label>
                       <input
+                        id="register-name"
                         type="text"
                         placeholder="Full Name"
                         value={formData.name}
                         onChange={(e) => setFormData({...formData, name: e.target.value})}
                         required
                       />
-                      <input
-                        type="text"
-                        placeholder="Region / Service Area"
-                        value={formData.region || ''}
-                        onChange={(e) => setFormData({...formData, region: e.target.value})}
-                        required={['inspector', 'transporter', 'fraud_analyst'].includes(formData.role)}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Organization"
-                        value={formData.organization}
-                        onChange={(e) => setFormData({...formData, organization: e.target.value})}
-                      />
+
+                      <label className="login-field-label" htmlFor="register-role">Role</label>
                       <select
+                        id="register-role"
                         value={formData.role}
-                        onChange={(e) => setFormData({...formData, role: e.target.value})}
+                        onChange={(e) => setFormData((prev) => {
+                          const nextRole = e.target.value;
+                          return {
+                            ...prev,
+                            role: nextRole,
+                            region: nextRole === 'buyer' ? '' : prev.region,
+                            transporter_source_state: nextRole === 'transporter' ? prev.transporter_source_state : '',
+                            transporter_destination_states: nextRole === 'transporter' ? (prev.transporter_destination_states || []) : []
+                          };
+                        })}
                         required
                       >
                         <option value="buyer">Buyer</option>
@@ -675,6 +767,100 @@ function Login({ setUser }) {
                         <option value="fraud_analyst">Fraud Analyst</option>
                         <option value="admin">Admin</option>
                       </select>
+
+                      {formData.role !== 'buyer' && formData.role !== 'transporter' && (
+                        <>
+                          <label className="login-field-label" htmlFor="register-role-state">State</label>
+                          <select
+                            id="register-role-state"
+                            value={formData.region || ''}
+                            onChange={(e) => setFormData({...formData, region: e.target.value})}
+                            required
+                          >
+                            <option value="">Select State</option>
+                            {INDIAN_STATES.map((state) => (
+                              <option key={state} value={state}>{state}</option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+
+                      {formData.role === 'transporter' && (
+                        <>
+                          <label className="login-field-label" htmlFor="register-transporter-source">Source State</label>
+                          <select
+                            id="register-transporter-source"
+                            value={formData.transporter_source_state || ''}
+                            onChange={(e) => {
+                              const selectedSource = e.target.value;
+                              setFormData((prev) => {
+                                const destinations = new Set(prev.transporter_destination_states || []);
+                                if (selectedSource) {
+                                  destinations.add(selectedSource);
+                                }
+                                return {
+                                  ...prev,
+                                  region: selectedSource,
+                                  transporter_source_state: selectedSource,
+                                  transporter_destination_states: Array.from(destinations)
+                                };
+                              });
+                            }}
+                            required
+                          >
+                            <option value="">Select Source State</option>
+                            {INDIAN_STATES.map((state) => (
+                              <option key={`src-${state}`} value={state}>{state}</option>
+                            ))}
+                          </select>
+
+                          <label className="login-field-label">Destination States</label>
+                          <div className="transporter-destination-picker" role="group" aria-label="Destination states">
+                            {INDIAN_STATES.map((state) => {
+                              const sourceState = formData.transporter_source_state;
+                              const isSourceState = sourceState === state;
+                              const selectedDestinations = formData.transporter_destination_states || [];
+                              const isChecked = isSourceState || selectedDestinations.includes(state);
+
+                              return (
+                                <label key={`dst-${state}`} className={`transporter-destination-option ${isChecked ? 'selected' : ''}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={isSourceState}
+                                    onChange={(e) => {
+                                      const shouldInclude = e.target.checked;
+                                      setFormData((prev) => {
+                                        const currentDestinations = new Set(prev.transporter_destination_states || []);
+
+                                        if (shouldInclude) {
+                                          currentDestinations.add(state);
+                                        } else {
+                                          currentDestinations.delete(state);
+                                        }
+
+                                        const currentSource = prev.transporter_source_state;
+                                        if (currentSource) {
+                                          currentDestinations.add(currentSource);
+                                        }
+
+                                        return {
+                                          ...prev,
+                                          transporter_destination_states: Array.from(currentDestinations)
+                                        };
+                                      });
+                                    }}
+                                  />
+                                  <span>{state}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <div className="field-hint">
+                            Select all destination states this transporter can deliver to. Source state is always included.
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
                   <input
@@ -710,114 +896,142 @@ function Login({ setUser }) {
 
             <aside className="landing-panel landing-panel-right">
               <div className="panel-header panel-header-right">
-                <Newspaper size={18} />
-                <h3>Weather Insight</h3>
+                <ShieldAlert size={18} />
+                <h3>Live Risk & Supply Pulse</h3>
               </div>
 
-              <article className="insight-block mb-3">
-                <h6><CloudSun size={16} /> Live Weather Explorer</h6>
-                <p>Real-time forecast with city search and quick explore options.</p>
+              <article className="insight-block mb-3 live-intel-block">
+                <div className="intel-headline-row">
+                  <h6><Sparkles size={16} /> Trust Intelligence Board</h6>
+                  <button
+                    type="button"
+                    className="intel-refresh-btn"
+                    onClick={loadLandingInsights}
+                    disabled={insightsLoading}
+                  >
+                    <RefreshCw size={14} className={insightsLoading ? 'spinning' : ''} /> Refresh
+                  </button>
+                </div>
 
-                <div className="weather-actions-row">
-                  <div className="weather-unit-toggle" role="group" aria-label="Temperature unit">
+                <p>Live signals from batches, fraud flags, and active investigation flow.</p>
+
+                <div className="pulse-metric-grid">
+                  <div className="pulse-metric pulse-metric-alert">
+                    <span className="metric-label">Open Flags</span>
+                    <strong>{landingInsights.fraud_pulse.open_flags}</strong>
+                  </div>
+                  <div className="pulse-metric pulse-metric-watch">
+                    <span className="metric-label">Investigating</span>
+                    <strong>{landingInsights.fraud_pulse.investigating_flags}</strong>
+                  </div>
+                  <div className="pulse-metric pulse-metric-critical">
+                    <span className="metric-label">High/Critical</span>
+                    <strong>{landingInsights.fraud_pulse.high_critical_flags}</strong>
+                  </div>
+                  <div className="pulse-metric pulse-metric-case">
+                    <span className="metric-label">Pending Cases</span>
+                    <strong>{landingInsights.fraud_pulse.pending_cases}</strong>
+                  </div>
+                </div>
+
+                <div className="insight-tab-row" role="tablist" aria-label="Landing insight tabs">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeInsightTab === 'batches'}
+                    className={`insight-tab-btn ${activeInsightTab === 'batches' ? 'active' : ''}`}
+                    onClick={() => setActiveInsightTab('batches')}
+                  >
+                    Available Batches
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeInsightTab === 'activity'}
+                    className={`insight-tab-btn ${activeInsightTab === 'activity' ? 'active' : ''}`}
+                    onClick={() => setActiveInsightTab('activity')}
+                  >
+                    Recent Activity
+                  </button>
+                </div>
+
+                {insightsLoading && (
+                  <div className="intel-skeleton-list" aria-label="Loading insights">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                )}
+
+                {!insightsLoading && insightsError && (
+                  <div className="insights-error-box">
+                    <p>{insightsError}</p>
                     <button
                       type="button"
-                      className={weatherUnit === 'C' ? 'active' : ''}
-                      onClick={() => setWeatherUnit('C')}
+                      className="btn btn-sm btn-outline-light"
+                      onClick={loadLandingInsights}
                     >
-                      C
-                    </button>
-                    <button
-                      type="button"
-                      className={weatherUnit === 'F' ? 'active' : ''}
-                      onClick={() => setWeatherUnit('F')}
-                    >
-                      F
+                      Try again
                     </button>
                   </div>
-
-                  <button
-                    type="button"
-                    className="weather-action-btn"
-                    onClick={() => loadWeather(weatherCity)}
-                    disabled={weatherLoading}
-                  >
-                    <RefreshCw size={14} /> Refresh
-                  </button>
-
-                  <button
-                    type="button"
-                    className="weather-action-btn"
-                    onClick={handleUseCurrentLocation}
-                    disabled={weatherGeoLoading}
-                  >
-                    <LocateFixed size={14} /> {weatherGeoLoading ? 'Locating...' : 'Use My Location'}
-                  </button>
-                </div>
-
-                <form className="weather-search-row" onSubmit={handleWeatherSearch}>
-                  <input
-                    type="text"
-                    value={weatherSearch}
-                    onChange={(e) => setWeatherSearch(e.target.value)}
-                    placeholder="Search city"
-                    aria-label="Search city weather"
-                  />
-                  <button type="submit" className="btn btn-sm btn-outline-primary">Explore</button>
-                </form>
-
-                <div className="weather-city-options">
-                  {FEATURED_WEATHER_CITIES.map((city) => (
-                    <button
-                      key={city.name}
-                      type="button"
-                      className={`weather-city-chip ${weatherCity.name === city.name ? 'active' : ''}`}
-                      onClick={() => setWeatherCity(city)}
-                    >
-                      {city.name}
-                    </button>
-                  ))}
-                </div>
-
-                {weatherLoading && <p className="weather-status">Loading latest weather...</p>}
-                {weatherError && <p className="weather-error">{weatherError}</p>}
-
-                {weatherData && !weatherLoading && (
-                  <>
-                    <div className="weather-current">
-                      <strong>{weatherData.cityName}</strong>
-                      <span>{weatherData.summary}</span>
-                    </div>
-
-                    <div className="weather-chip-grid">
-                      <span><CloudSun size={14} /> Temp: {toDisplayTemp(weatherData.currentTemp)}{weatherUnit}</span>
-                      <span><ThermometerSun size={14} /> Feels like: {toDisplayTemp(weatherData.feelsLike)}{weatherUnit}</span>
-                      <span><Droplets size={14} /> Humidity: {weatherData.humidity}%</span>
-                      <span><Wind size={14} /> Wind: {weatherData.windSpeed} km/h</span>
-                      <span><Sunrise size={14} /> Sunrise: {weatherData.daily[0]?.sunrise || '--:--'}</span>
-                      <span><Sunset size={14} /> Sunset: {weatherData.daily[0]?.sunset || '--:--'}</span>
-                    </div>
-
-                    <div className="weather-forecast-list">
-                      {weatherData.daily.map((day) => (
-                        <div key={`${weatherData.cityName}-${day.day}`} className="weather-day-row">
-                          <span>{day.day}</span>
-                          <span>{toDisplayTemp(day.min)}{weatherUnit} / {toDisplayTemp(day.max)}{weatherUnit}</span>
-                          <span>Rain {day.rainChance}% • UV {day.uvMax}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <a
-                      className="weather-explore-link"
-                      href={`https://www.google.com/search?q=${encodeURIComponent(`${weatherData.cityName} 7 day weather forecast`)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Explore full 7-day forecast
-                    </a>
-                  </>
                 )}
+
+                {!insightsLoading && !insightsError && activeInsightTab === 'batches' && (
+                  <div className="insight-list" role="tabpanel" aria-label="Available batches list">
+                    {landingInsights.available_batches.length === 0 && (
+                      <p className="insight-empty-msg">No open batch capacity right now.</p>
+                    )}
+                    {landingInsights.available_batches.map((batch) => (
+                      <article key={batch.id} className="insight-list-item batch-insight-item">
+                        <div>
+                          <strong>{batch.product_type || 'Unknown Product'}</strong>
+                          <small>Batch {batch.batch_number || 'N/A'}</small>
+                        </div>
+                        <div className="batch-insight-meta">
+                          <span>{formatQuantity(batch.available_quantity_kg, normalizeUnit(batch.batch_unit || 'kg'))}</span>
+                          <span>{batch.region || 'Unknown region'}</span>
+                          <span>{batch.quality_grade || 'Unrated'}</span>
+                        </div>
+                        <div className="batch-insight-cert">
+                          {batch.has_valid_certificate ? (
+                            <span className="cert-chip cert-chip-valid"><CheckCircle size={13} /> Verified Certificate</span>
+                          ) : (
+                            <span className="cert-chip cert-chip-missing"><XCircle size={13} /> Certificate Pending</span>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                {!insightsLoading && !insightsError && activeInsightTab === 'activity' && (
+                  <div className="insight-list" role="tabpanel" aria-label="Recent activity list">
+                    {landingInsights.recent_activity.length === 0 && (
+                      <p className="insight-empty-msg">No recent events available.</p>
+                    )}
+                    {landingInsights.recent_activity.map((item, index) => (
+                      <article key={`${item.activity_type || 'ACTIVITY'}-${item.activity_time || index}`} className="insight-list-item activity-insight-item">
+                        <div>
+                          <strong>{String(item.activity_type || 'SYSTEM_ACTIVITY').replaceAll('_', ' ')}</strong>
+                          <small>{item.description || 'New supply chain activity recorded.'}</small>
+                        </div>
+                        <div className="activity-insight-meta">
+                          <span>{item.region || 'Unknown region'}</span>
+                          <span>{formatRelativeTime(item.activity_time)}</span>
+                          <span className={`severity-chip severity-${String(item.severity || 'medium').toLowerCase()}`}>
+                            {String(item.severity || 'medium').toUpperCase()}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                <div className="insight-footer-note">
+                  <span>
+                    Last refresh: {landingInsights.fraud_pulse.refreshed_at ? formatRelativeTime(landingInsights.fraud_pulse.refreshed_at) : 'just now'}
+                  </span>
+                </div>
               </article>
 
             </aside>
@@ -904,9 +1118,14 @@ function BuyerDashboard({ user }) {
   const [shipments, setShipments] = useState([]);
   const [orders, setOrders] = useState([]);
   const [transporters, setTransporters] = useState([]);
+  const [routeTransporters, setRouteTransporters] = useState([]);
+  const [routeTransportersLoading, setRouteTransportersLoading] = useState(false);
+  const [routeTransportersError, setRouteTransportersError] = useState('');
   const [transportersLoading, setTransportersLoading] = useState(false);
   const [transportersError, setTransportersError] = useState('');
-  const [transporterRegionFilter, setTransporterRegionFilter] = useState(user?.region || '');
+  const [transporterRegionFilter, setTransporterRegionFilter] = useState(
+    INDIAN_STATES.includes(user?.region) ? user.region : ''
+  );
   const [deliveryDetailsByBatch, setDeliveryDetailsByBatch] = useState({});
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [activeBuyFormBatchId, setActiveBuyFormBatchId] = useState(null);
@@ -925,6 +1144,8 @@ function BuyerDashboard({ user }) {
     delivery_contact_name: '',
     delivery_contact_phone: '',
     delivery_instructions: '',
+    source_state: product?.region || product?.farm_location || '',
+    destination_state: '',
     preferred_transporter_id: '',
     preferred_transporter_name: '',
     requested_quantity: String(product?.available_quantity_kg ?? ''),
@@ -936,16 +1157,51 @@ function BuyerDashboard({ user }) {
     setTransportersError('');
 
     try {
-      const response = await api.get('/transporters/marketplace', {
-        params: region ? { region } : {}
-      });
+      const queryTerms = toStateOrZoneTerms(region);
 
-      setTransporters(Array.isArray(response.data.transporters) ? response.data.transporters : []);
+      const responses = queryTerms.length === 0
+        ? [await api.get('/transporters/marketplace')]
+        : await Promise.all(queryTerms.map((term) => api.get('/transporters/marketplace', { params: { region: term } })));
+
+      setTransporters(mergeAndRankTransporters(responses));
     } catch (error) {
       setTransporters([]);
       setTransportersError('Transporter marketplace is unavailable right now.');
     } finally {
       setTransportersLoading(false);
+    }
+  }, []);
+
+  const loadRouteTransporters = useCallback(async (sourceState, destinationState) => {
+    const routeStates = Array.from(new Set([sourceState, destinationState].map((value) => String(value || '').trim()).filter(Boolean)));
+    const routeTerms = Array.from(new Set(routeStates.flatMap((state) => toStateOrZoneTerms(state))));
+
+    if (routeTerms.length === 0) {
+      setRouteTransporters([]);
+      setRouteTransportersError('');
+      return;
+    }
+
+    setRouteTransportersLoading(true);
+    setRouteTransportersError('');
+
+    try {
+      const responses = await Promise.all(
+        routeTerms.map((term) => api.get('/transporters/marketplace', {
+          params: {
+            region: term,
+            source_state: sourceState || undefined,
+            destination_state: destinationState || undefined,
+          }
+        }))
+      );
+
+      setRouteTransporters(mergeAndRankTransporters(responses));
+    } catch (error) {
+      setRouteTransporters([]);
+      setRouteTransportersError('Transporter suggestions for this route are unavailable right now.');
+    } finally {
+      setRouteTransportersLoading(false);
     }
   }, []);
 
@@ -979,6 +1235,8 @@ function BuyerDashboard({ user }) {
         batch_number: cert.batch_number,
         product_type: cert.product_type,
         farm_name: cert.farm_name,
+        farm_location: batch.farm_location,
+        region: batch.region,
         quantity_kg: totalQuantity,
         available_quantity_kg: availableQuantity,
         batch_unit: batchUnit,
@@ -1001,6 +1259,8 @@ function BuyerDashboard({ user }) {
       ...prev,
       [product.batch_id]: {
         ...existingDetails,
+        source_state: existingDetails.source_state || product.region || product.farm_location || '',
+        destination_state: existingDetails.destination_state || '',
         requested_quantity: existingDetails.requested_quantity || String(product.available_quantity_kg),
         requested_unit: product.batch_unit || 'kg'
       }
@@ -1019,6 +1279,18 @@ function BuyerDashboard({ user }) {
       }
     }));
   };
+
+  const activeBuyDetails = activeBuyFormBatchId ? deliveryDetailsByBatch[activeBuyFormBatchId] || {} : {};
+
+  useEffect(() => {
+    if (!activeBuyFormBatchId || !showBuyModal) {
+      setRouteTransporters([]);
+      setRouteTransportersError('');
+      return;
+    }
+
+    loadRouteTransporters(activeBuyDetails.source_state, activeBuyDetails.destination_state);
+  }, [activeBuyFormBatchId, showBuyModal, activeBuyDetails.source_state, activeBuyDetails.destination_state, loadRouteTransporters]);
 
   useEffect(() => {
     Promise.all([
@@ -1073,13 +1345,14 @@ function BuyerDashboard({ user }) {
 
   const handleBuy = async (product) => {
     const deliveryDetails = getMergedDeliveryDetails(product);
+    const normalizedDestinationState = normalizeLocationText(deliveryDetails.destination_state);
     const requestedQuantity = Number(deliveryDetails.requested_quantity);
     const requestedUnit = normalizeUnit(deliveryDetails.requested_unit || product.batch_unit);
     const batchUnit = normalizeUnit(product.batch_unit);
     const availableQuantity = Number(product.available_quantity_kg);
 
-    if (!String(deliveryDetails.delivery_location || '').trim()) {
-      alert('Please enter a delivery location before placing the request.');
+    if (!normalizedDestinationState) {
+      alert('Please choose destination state before placing the request.');
       return;
     }
     if (!deliveryDetails.preferred_delivery_date) {
@@ -1106,7 +1379,7 @@ function BuyerDashboard({ user }) {
         batch_id: product.batch_id,
         requested_quantity_kg: requestedQuantity,
         requested_unit: product.batch_unit,
-        delivery_location: String(deliveryDetails.delivery_location || '').trim(),
+        delivery_location: normalizedDestinationState,
         preferred_delivery_date: deliveryDetails.preferred_delivery_date,
         delivery_contact_name: deliveryDetails.delivery_contact_name?.trim() || null,
         delivery_contact_phone: deliveryDetails.delivery_contact_phone?.trim() || null,
@@ -1219,68 +1492,6 @@ function BuyerDashboard({ user }) {
         )}
       </div>
 
-      <div className="card transporter-marketplace-card">
-        <div className="marketplace-header">
-          <div>
-            <h2><Truck size={20} /> Transporter Marketplace</h2>
-            <p>Choose a transporter by region, reliability, and completed delivery history.</p>
-          </div>
-          <div className="marketplace-filter-row">
-            <label htmlFor="transporterRegionFilter">Region</label>
-            <input
-              id="transporterRegionFilter"
-              type="text"
-              value={transporterRegionFilter}
-              onChange={(e) => setTransporterRegionFilter(e.target.value)}
-              placeholder="e.g. Delhi, North Zone"
-            />
-          </div>
-        </div>
-
-        {transportersError && <div className="error-msg">{transportersError}</div>}
-        {transportersLoading ? (
-          <p className="buyer-empty">Loading transporter marketplace...</p>
-        ) : transporters.length === 0 ? (
-          <p className="buyer-empty">No transporters found for this region. Try a broader search.</p>
-        ) : (
-          <div className="transporter-market-grid">
-            {transporters.slice(0, 6).map((transporter) => (
-              <article key={transporter.id} className="transporter-card">
-                <div className="transporter-card-top">
-                  <div>
-                    <h3>{transporter.name}</h3>
-                    <p>{transporter.region || 'Unassigned region'}</p>
-                  </div>
-                  <span className="badge badge-blue">{formatRating(transporter.rating)} ★</span>
-                </div>
-
-                <div className="transporter-metrics">
-                  <div><span>Reviews</span><strong>{transporter.rating_count || 0}</strong></div>
-                  <div><span>Delivered</span><strong>{transporter.completed_shipments || 0}</strong></div>
-                  <div><span>Active</span><strong>{transporter.active_shipments || 0}</strong></div>
-                  <div><span>Coverage</span><strong>{transporter.region || 'Global'}</strong></div>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    if (activeBuyFormBatchId) {
-                      chooseTransporterForBatch(activeBuyFormBatchId, transporter);
-                      return;
-                    }
-
-                    alert('Open a product order first, then choose a transporter inside the order form.');
-                  }}
-                >
-                  Use for current order
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div className="buyer-products-grid">
         {products.map((product) => {
           const activeOrders = orders.filter(
@@ -1333,6 +1544,7 @@ function BuyerDashboard({ user }) {
 
               <div className="buyer-product-meta">
                 <div><span>Farm</span><strong>{product.farm_name}</strong></div>
+                <div><span>Pickup State</span><strong>{product.region || product.farm_location || 'N/A'}</strong></div>
                 <div><span>Total Quantity</span><strong>{formatQuantity(product.quantity_kg, product.batch_unit)}</strong></div>
                 <div><span>Available Now</span><strong>{formatQuantity(product.available_quantity_kg, product.batch_unit)}</strong></div>
                 <div><span>Grade</span><strong>{product.quality_grade}</strong></div>
@@ -1481,6 +1693,73 @@ function BuyerDashboard({ user }) {
         )}
       </div>
 
+      <div className="card transporter-marketplace-card buyer-marketplace-lower">
+        <div className="marketplace-header">
+          <div>
+            <h2><Truck size={20} /> Transporter Marketplace</h2>
+            <p>Choose a transporter by state, reliability, and completed delivery history.</p>
+          </div>
+          <div className="marketplace-filter-row">
+            <label htmlFor="transporterRegionFilter">State</label>
+            <select
+              id="transporterRegionFilter"
+              value={transporterRegionFilter}
+              onChange={(e) => setTransporterRegionFilter(e.target.value)}
+            >
+              <option value="">All states</option>
+              {INDIAN_STATES.map((state) => (
+                <option key={state} value={state}>{state}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {transportersError && <div className="error-msg">{transportersError}</div>}
+        {transportersLoading ? (
+          <p className="buyer-empty">Loading transporter marketplace...</p>
+        ) : transporters.length === 0 ? (
+          <p className="buyer-empty">No transporters found for this region. Try a broader search.</p>
+        ) : (
+          <div className="transporter-market-grid">
+            {transporters.slice(0, 6).map((transporter) => (
+              <article key={transporter.id} className="transporter-card">
+                <div className="transporter-card-top">
+                  <div>
+                    <h3>{transporter.name}</h3>
+                    <p>{transporter.region || 'Unassigned region'}</p>
+                  </div>
+                  <span className="badge badge-blue">{formatRating(getTransporterEffectiveRating(transporter))} ★</span>
+                </div>
+
+                <div className="transporter-metrics">
+                  <div><span>Reviews</span><strong>{transporter.rating_count || 0}</strong></div>
+                  <div><span>Delivered</span><strong>{transporter.completed_shipments || 0}</strong></div>
+                  <div><span>Active</span><strong>{transporter.active_shipments || 0}</strong></div>
+                  <div><span>Coverage</span><strong>{transporter.region || 'Global'}</strong></div>
+                  <div><span>Fraud Flags</span><strong>{transporter.active_fraud_flags || 0}</strong></div>
+                  <div><span>Penalty</span><strong>-{formatRating(getTransporterFraudPenalty(transporter))}</strong></div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    if (activeBuyFormBatchId) {
+                      chooseTransporterForBatch(activeBuyFormBatchId, transporter);
+                      return;
+                    }
+
+                    alert('Open a product order first, then choose a transporter inside the order form.');
+                  }}
+                >
+                  Use for current order
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+
       {activeBuyFormBatchId && showBuyModal && (() => {
         const product = products.find((p) => p.batch_id === activeBuyFormBatchId);
         if (!product) return null;
@@ -1491,6 +1770,8 @@ function BuyerDashboard({ user }) {
         const requestedQuantity = Number(requestedQuantityValue);
         const requestedUnit = deliveryDetails.requested_unit || product.batch_unit;
         const availableQuantity = Number(product.available_quantity_kg);
+        const sourceState = normalizeLocationText(deliveryDetails.source_state || product.region || product.farm_location);
+        const destinationState = normalizeLocationText(deliveryDetails.destination_state);
         const batchUnit = product.batch_unit || 'kg';
         const quantityError = !String(requestedQuantityValue).trim()
           ? 'Enter the quantity you want to buy.'
@@ -1594,23 +1875,6 @@ function BuyerDashboard({ user }) {
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label">Delivery Location <span className="text-danger">*</span></label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="Enter delivery location"
-                        value={deliveryDetails.delivery_location}
-                        onChange={(e) => setDeliveryDetailsByBatch((prev) => ({
-                          ...prev,
-                          [activeBuyFormBatchId]: {
-                            ...deliveryDetails,
-                            delivery_location: e.target.value
-                          }
-                        }))}
-                      />
-                    </div>
-
-                    <div className="form-group">
                       <label className="form-label">Preferred Delivery Date <span className="text-danger">*</span></label>
                       <input
                         type="date"
@@ -1678,12 +1942,103 @@ function BuyerDashboard({ user }) {
                     </div>
 
                     <div className="form-group">
+                      <label className="form-label">Source State (From Batch)</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={sourceState}
+                        readOnly
+                        title="Source state from inspector batch data"
+                      />
+                      <div className="field-hint">
+                        Pickup source comes from batch data entered by inspector.
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Destination State <span className="text-danger">*</span></label>
+                      <select
+                        className="form-control"
+                        value={destinationState}
+                        onChange={(e) => setDeliveryDetailsByBatch((prev) => ({
+                          ...prev,
+                          [activeBuyFormBatchId]: {
+                            ...deliveryDetails,
+                            destination_state: e.target.value
+                          }
+                        }))}
+                        required
+                      >
+                        <option value="">Select destination state</option>
+                        {INDIAN_STATES.map((state) => (
+                          <option key={state} value={state}>{state}</option>
+                        ))}
+                      </select>
+                      <div className="field-hint">
+                        Route recommendations and ratings are based on source to destination.
+                      </div>
+                    </div>
+
+                    <div className="route-transporters-panel">
+                      <div className="route-transporters-head">
+                        <div>
+                          <h6>Transporter Suggestions</h6>
+                          <p>
+                            {sourceState || 'Source'} to {destinationState || 'Destination'}
+                          </p>
+                        </div>
+                        <div className="route-transporters-badge">
+                          Default: auto-assign
+                        </div>
+                      </div>
+
+                      {routeTransportersLoading ? (
+                        <p className="buyer-empty">Loading route transporters...</p>
+                      ) : routeTransportersError ? (
+                        <div className="error-msg">{routeTransportersError}</div>
+                      ) : routeTransporters.length === 0 ? (
+                        <p className="buyer-empty">No transporters matched this route state selection yet.</p>
+                      ) : (
+                        <div className="route-transporters-grid">
+                          {routeTransporters.slice(0, 6).map((transporter) => (
+                            <article key={transporter.id} className="route-transporter-card">
+                              <div className="transporter-card-top">
+                                <div>
+                                  <h3>{transporter.name}</h3>
+                                  <p>{transporter.region || 'State not listed'}</p>
+                                </div>
+                                <span className="badge badge-blue">{formatRating(getTransporterEffectiveRating(transporter))} ★</span>
+                              </div>
+
+                              <div className="transporter-metrics">
+                                <div><span>Reviews</span><strong>{transporter.rating_count || 0}</strong></div>
+                                <div><span>Delivered</span><strong>{transporter.completed_shipments || 0}</strong></div>
+                                <div><span>Active</span><strong>{transporter.active_shipments || 0}</strong></div>
+                                <div><span>Score</span><strong>{formatRating(getTransporterEffectiveRating(transporter))}</strong></div>
+                                <div><span>Fraud Flags</span><strong>{transporter.active_fraud_flags || 0}</strong></div>
+                                <div><span>Penalty</span><strong>-{formatRating(getTransporterFraudPenalty(transporter))}</strong></div>
+                              </div>
+
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => chooseTransporterForBatch(activeBuyFormBatchId, transporter)}
+                              >
+                                Choose transporter
+                              </button>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="form-group">
                       <label className="form-label">Preferred Transporter (Optional)</label>
                       <select
                         className="form-control"
                         value={deliveryDetails.preferred_transporter_id || ''}
                         onChange={(e) => {
-                          const selectedTransporter = transporters.find((item) => String(item.id) === String(e.target.value));
+                          const selectedTransporter = routeTransporters.find((item) => String(item.id) === String(e.target.value));
                           setDeliveryDetailsByBatch((prev) => ({
                             ...prev,
                             [activeBuyFormBatchId]: {
@@ -1695,14 +2050,14 @@ function BuyerDashboard({ user }) {
                         }}
                       >
                         <option value="">Auto assign from marketplace</option>
-                        {transporters.map((transporter) => (
+                        {routeTransporters.map((transporter) => (
                           <option key={transporter.id} value={transporter.id}>
-                            {transporter.name} • {transporter.region || 'No region'} • {formatRating(transporter.rating)} ★
+                            {transporter.name} • {transporter.region || 'No region'} • {formatRating(getTransporterEffectiveRating(transporter))} ★
                           </option>
                         ))}
                       </select>
                       <div className="field-hint">
-                        Select a transporter for this order. Region and rating are shown in the marketplace above.
+                        Auto-assign stays as the default. Pick one only if you want a preferred transporter.
                       </div>
                       {deliveryDetails.preferred_transporter_name && (
                         <div className="selected-transporter-chip">
@@ -1730,7 +2085,7 @@ function BuyerDashboard({ user }) {
                   className="btn-success"
                   disabled={
                     orderingBatchId === activeBuyFormBatchId ||
-                    !String(deliveryDetails.delivery_location || '').trim() ||
+                    !destinationState ||
                     !deliveryDetails.preferred_delivery_date ||
                     Boolean(quantityError)
                   }
@@ -1856,21 +2211,165 @@ function StatCard({ icon, title, value, color }) {
 function BatchList({ user }) {
   const [batches, setBatches] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedCount, setArchivedCount] = useState(0);
+  const [restoreState, setRestoreState] = useState({ submittingId: null, error: '', success: '' });
+  const [deleteState, setDeleteState] = useState({
+    batch: null,
+    reason: '',
+    error: '',
+    blockers: null,
+    submitting: false,
+    success: ''
+  });
+
+  const loadBatches = useCallback(async () => {
+    const query = showArchived && user.role === 'admin'
+      ? '/batches?include_deleted=true&only_deleted=true'
+      : '/batches';
+
+    const [response, archivedResponse] = await Promise.all([
+      api.get(query),
+      user.role === 'admin'
+        ? api.get('/batches?include_deleted=true&only_deleted=true')
+        : Promise.resolve(null)
+    ]);
+
+    setBatches(response.data.batches || []);
+
+    if (user.role === 'admin') {
+      setArchivedCount((archivedResponse?.data?.batches || []).length);
+    }
+  }, [showArchived, user.role]);
 
   useEffect(() => {
-    api.get('/batches').then(res => setBatches(res.data.batches));
-  }, []);
+    loadBatches().catch(() => {
+      setBatches([]);
+    });
+  }, [loadBatches]);
+
+  const openDeleteModal = (batch) => {
+    setDeleteState({
+      batch,
+      reason: '',
+      error: '',
+      blockers: null,
+      submitting: false,
+      success: ''
+    });
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteState({
+      batch: null,
+      reason: '',
+      error: '',
+      blockers: null,
+      submitting: false,
+      success: ''
+    });
+  };
+
+  const handleDeleteBatch = async () => {
+    const targetBatch = deleteState.batch;
+    if (!targetBatch) return;
+
+    const trimmedReason = String(deleteState.reason || '').trim();
+    if (trimmedReason.length < 5) {
+      setDeleteState((prev) => ({
+        ...prev,
+        error: 'Please provide a deletion reason with at least 5 characters.'
+      }));
+      return;
+    }
+
+    setDeleteState((prev) => ({
+      ...prev,
+      submitting: true,
+      error: '',
+      blockers: null,
+      success: ''
+    }));
+
+    try {
+      await api.delete(`/batches/${targetBatch.id}`, {
+        data: { reason: trimmedReason }
+      });
+
+      await loadBatches();
+      setDeleteState((prev) => ({
+        ...prev,
+        submitting: false,
+        success: `Batch ${targetBatch.batch_number} deleted successfully.`
+      }));
+
+      window.setTimeout(() => {
+        closeDeleteModal();
+      }, 900);
+    } catch (err) {
+      const responseData = err.response?.data || {};
+      setDeleteState((prev) => ({
+        ...prev,
+        submitting: false,
+        error: responseData.error || 'Failed to delete batch',
+        blockers: responseData.blockers || null
+      }));
+    }
+  };
+
+  const handleRestoreBatch = async (batchId) => {
+    setRestoreState({ submittingId: batchId, error: '', success: '' });
+
+    try {
+      const response = await api.patch(`/batches/${batchId}/restore`);
+      await loadBatches();
+      setRestoreState({
+        submittingId: null,
+        error: '',
+        success: response.data?.message || 'Batch restored successfully'
+      });
+    } catch (err) {
+      setRestoreState({
+        submittingId: null,
+        error: err.response?.data?.error || 'Failed to restore batch',
+        success: ''
+      });
+    }
+  };
 
   return (
     <div className="page-container shipments-page">
       <div className="page-header">
-        <h1>Batches</h1>
-        {(user.role === 'inspector' || user.role === 'admin') && (
-          <button onClick={() => setShowCreate(true)} className="btn-primary">
-            Create Batch
-          </button>
-        )}
+        <div className="page-header-title">
+          <h1>{showArchived ? 'Archived Batches' : 'Batches'}</h1>
+          {user.role === 'admin' && (
+            <span className="archived-count-badge">Archived: {archivedCount}</span>
+          )}
+        </div>
+
+        <div className="page-header-actions">
+          {user.role === 'admin' && (
+            <button
+              type="button"
+              onClick={() => {
+                setRestoreState({ submittingId: null, error: '', success: '' });
+                setShowArchived((prev) => !prev);
+              }}
+              className="btn-secondary"
+            >
+              {showArchived ? 'Show Active Batches' : `Show Archived Batches (${archivedCount})`}
+            </button>
+          )}
+          {(user.role === 'inspector' || user.role === 'admin') && (
+            <button onClick={() => setShowCreate(true)} className="btn-primary">
+              Create Batch
+            </button>
+          )}
+        </div>
       </div>
+
+      {restoreState.error && <div className="error-msg batch-status-msg">{restoreState.error}</div>}
+      {restoreState.success && <div className="success-msg batch-status-msg">{restoreState.success}</div>}
 
       {showCreate && (
         <CreateBatchForm
@@ -1896,6 +2395,8 @@ function BatchList({ user }) {
               <th>Harvest Date</th>
               <th>Certificates</th>
               <th>Shipments</th>
+              {showArchived && <th>Deleted At</th>}
+              {(user.role === 'inspector' || user.role === 'admin') && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -1911,11 +2412,92 @@ function BatchList({ user }) {
                 <td>{new Date(batch.harvest_date).toLocaleDateString()}</td>
                 <td>{batch.certificate_count}</td>
                 <td>{batch.shipment_count}</td>
+                {showArchived && <td>{batch.deleted_at ? new Date(batch.deleted_at).toLocaleString() : '-'}</td>}
+                {(user.role === 'inspector' || user.role === 'admin') && (
+                  <td>
+                    {showArchived && user.role === 'admin' ? (
+                      <button
+                        type="button"
+                        className="btn-primary-small"
+                        onClick={() => handleRestoreBatch(batch.id)}
+                        disabled={restoreState.submittingId === batch.id}
+                      >
+                        {restoreState.submittingId === batch.id ? 'Restoring...' : 'Restore'}
+                      </button>
+                    ) : (user.role === 'admin' || Number(batch.created_by) === Number(user.id)) ? (
+                      <button
+                        type="button"
+                        className="btn-danger-small"
+                        onClick={() => openDeleteModal(batch)}
+                        disabled={showArchived}
+                      >
+                        Delete
+                      </button>
+                    ) : (
+                      <span className="text-muted">Not owner</span>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {deleteState.batch && (
+        <div className="modal-overlay" onClick={closeDeleteModal}>
+          <div className="app-modal" onClick={(event) => event.stopPropagation()}>
+            <h2>Delete Batch</h2>
+            <p className="delete-batch-warning">
+              You are deleting <strong>{deleteState.batch.batch_number}</strong>. This action is blocked if pending shipments,
+              active orders, or open fraud investigations exist.
+            </p>
+
+            <textarea
+              className="delete-batch-reason"
+              placeholder="Enter deletion reason"
+              value={deleteState.reason}
+              onChange={(event) => setDeleteState((prev) => ({ ...prev, reason: event.target.value }))}
+              rows={4}
+            />
+
+            {deleteState.error && <div className="error-msg">{deleteState.error}</div>}
+            {deleteState.success && <div className="success-msg">{deleteState.success}</div>}
+
+            {deleteState.blockers && (
+              <div className="delete-blockers">
+                <h4>Deletion blockers</h4>
+                {deleteState.blockers.pending_shipments?.length > 0 && (
+                  <p>Pending/In-transit shipments: {deleteState.blockers.pending_shipments.map((item) => item.shipment_number).join(', ')}</p>
+                )}
+                {deleteState.blockers.active_orders?.length > 0 && (
+                  <p>Requested/approved orders: {deleteState.blockers.active_orders.map((item) => item.order_number).join(', ')}</p>
+                )}
+                {deleteState.blockers.open_flags?.length > 0 && (
+                  <p>Open/investigating fraud flags: {deleteState.blockers.open_flags.map((item) => `${item.flag_type} (#${item.id})`).join(', ')}</p>
+                )}
+                {deleteState.blockers.open_cases?.length > 0 && (
+                  <p>Open fraud cases: {deleteState.blockers.open_cases.map((item) => item.case_number).join(', ')}</p>
+                )}
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={handleDeleteBatch}
+                disabled={deleteState.submitting}
+              >
+                {deleteState.submitting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+              <button type="button" className="btn-secondary" onClick={closeDeleteModal} disabled={deleteState.submitting}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1961,13 +2543,16 @@ function CreateBatchForm({ onClose, onCreated }) {
             onChange={(e) => setFormData({...formData, farm_location: e.target.value})}
             required
           />
-          <input
-            type="text"
-            placeholder="Region / Zone"
+          <select
             value={formData.region}
             onChange={(e) => setFormData({...formData, region: e.target.value})}
             required
-          />
+          >
+            <option value="">Select State</option>
+            {INDIAN_STATES.map((state) => (
+              <option key={`batch-state-${state}`} value={state}>{state}</option>
+            ))}
+          </select>
           <input
             type="text"
             placeholder="Product Type (e.g., Wheat, Rice)"
@@ -2244,6 +2829,7 @@ function CreateCertificateForm({ onClose, onCreated }) {
 }
 
 function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
+  const todayIsoDate = new Date().toISOString().split('T')[0];
   const [formData, setFormData] = useState({
     distance_km: '',
     weight_kg: deliveryRequest?.requested_quantity_kg || '',
@@ -2262,6 +2848,12 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
     setLoading(true);
     setError('');
 
+    if (formData.expected_delivery_date && formData.expected_delivery_date < todayIsoDate) {
+      setError('Expected delivery date cannot be in the past.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const payload = {
         order_id: deliveryRequest.order_id,
@@ -2271,9 +2863,7 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
         expected_delivery_date: formData.expected_delivery_date || null,
         current_location: formData.current_location || deliveryRequest.pickup_location,
         delivery_notes: formData.delivery_notes || null,
-        delivered_to_name: formData.status === 'DELIVERED'
-          ? (formData.delivered_to_name || null)
-          : null,
+        delivered_to_name: formData.delivered_to_name || null,
         status: formData.status
       };
 
@@ -2322,6 +2912,7 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
           <input
             type="date"
             value={formData.expected_delivery_date}
+            min={todayIsoDate}
             onChange={(e) => setFormData({ ...formData, expected_delivery_date: e.target.value })}
           />
 
@@ -2367,7 +2958,6 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
             type="text"
             placeholder="Receiver person name (not location)"
             value={formData.delivered_to_name}
-            disabled={formData.status !== 'DELIVERED'}
             onChange={(e) => setFormData({ ...formData, delivered_to_name: e.target.value })}
           />
 
@@ -2733,10 +3323,12 @@ function ShipmentsPage({ user }) {
           </div>
 
           <div className="transporter-profile-grid">
-            <div><span>Rating</span><strong>{formatRating(transporterProfile.rating)} ★</strong></div>
+            <div><span>Rating (after fraud penalty)</span><strong>{formatRating(getTransporterEffectiveRating(transporterProfile))} ★</strong></div>
             <div><span>Reviews</span><strong>{transporterProfile.rating_count || 0}</strong></div>
             <div><span>Completed</span><strong>{transporterProfile.completed_shipments || 0}</strong></div>
             <div><span>Active</span><strong>{transporterProfile.active_shipments || 0}</strong></div>
+            <div><span>Active Fraud Flags</span><strong>{transporterProfile.active_fraud_flags || 0}</strong></div>
+            <div><span>Fraud Penalty</span><strong>-{formatRating(getTransporterFraudPenalty(transporterProfile))}</strong></div>
           </div>
         </div>
       )}
@@ -2798,7 +3390,7 @@ function ShipmentsPage({ user }) {
               const draft = shipmentDrafts[s.id] || {
                 status: s.status,
                 current_location: s.current_location || '',
-                delivered_to_name: s.delivered_to_name || '',
+                delivered_to_name: s.delivered_to_name || s.delivery_contact_name || '',
                 delivery_notes: s.delivery_notes || '',
                 expected_delivery_date: s.expected_delivery_date
                   ? new Date(s.expected_delivery_date).toISOString().slice(0, 10)
@@ -2812,6 +3404,16 @@ function ShipmentsPage({ user }) {
 
               return (
                 <div key={s.id} className="shipment-card">
+                  {(() => {
+                    const fraudReason = getShipmentFraudReason(s);
+                    return fraudReason ? (
+                      <div className="shipment-fraud-banner">
+                        <strong>Fraud Comment</strong>
+                        <span>{fraudReason}</span>
+                      </div>
+                    ) : null;
+                  })()}
+
                   <div className="shipment-card-top">
                     <strong>{s.shipment_number}</strong>
                     <span className={`badge ${draft.status === 'DELIVERED' ? 'badge-green' : draft.status === 'IN_TRANSIT' ? 'badge-blue' : draft.status === 'PENDING' ? 'badge-orange' : 'badge-gray'}`}>
@@ -2824,6 +3426,7 @@ function ShipmentsPage({ user }) {
                     <div><span>Batch</span><strong>{s.batch_number}</strong></div>
                     <div><span>From</span><strong>{s.from_location}</strong></div>
                     <div><span>Buyer Destination</span><strong>{s.to_location}</strong></div>
+                    <div><span>Receiver Name</span><strong>{s.delivered_to_name || s.delivery_contact_name || 'N/A'}</strong></div>
                     <div><span>Delivered At</span><strong>{s.delivered_at ? new Date(s.delivered_at).toLocaleString() : 'N/A'}</strong></div>
                   </div>
 
@@ -2864,7 +3467,7 @@ function ShipmentsPage({ user }) {
                       <label>Receiver Name (delivery)</label>
                       <input
                         type="text"
-                        value={draft.delivered_to_name}
+                        value={draft.delivered_to_name || s.delivery_contact_name || ''}
                         disabled={!canEditTransitFields || draft.status !== 'DELIVERED'}
                         onChange={(e) => updateShipmentDraft(s.id, 'delivered_to_name', e.target.value)}
                         placeholder="Receiver person name"
@@ -3031,11 +3634,17 @@ function OrdersPage({ user }) {
     ? orders
     : orders.filter((order) => order.status === statusFilter);
 
+  const safeDate = (value) => {
+    if (!value) return 'N/A';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleDateString();
+  };
+
   return (
-    <div className="page-container">
+    <div className="page-container orders-page">
       <div className="page-header">
         <h1>{user.role === 'buyer' ? 'My Orders' : 'Order Management'}</h1>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div className="orders-filter-wrap">
           <label htmlFor="orderStatusFilter">Status</label>
           <select
             id="orderStatusFilter"
@@ -3056,112 +3665,127 @@ function OrdersPage({ user }) {
         {filteredOrders.length === 0 ? (
           <p>No orders found for selected filter.</p>
         ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Order #</th>
-                {user.role !== 'buyer' && <th>Buyer</th>}
-                <th>Batch</th>
-                <th>Product</th>
-                <th>Quantity</th>
-                <th>Unit</th>
-                <th>Delivery Location</th>
-                <th>Preferred Transporter</th>
-                <th>Preferred Delivery</th>
-                <th>Status</th>
-                <th>Shipment</th>
-                <th>Created</th>
-                <th>Reviewed By</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredOrders.map((order) => (
-                <tr key={order.id}>
-                  <td><strong>{order.order_number}</strong></td>
-                  {user.role !== 'buyer' && <td>{order.buyer_name || 'N/A'}</td>}
-                  <td>{order.batch_number}</td>
-                  <td>{order.product_type}</td>
-                  <td>{parseFloat(order.requested_quantity_kg).toLocaleString()}</td>
-                  <td>{order.requested_unit || 'kg'}</td>
-                  <td>{order.delivery_location}</td>
-                  <td>
-                    <div>{order.preferred_transporter_name || 'Auto assign'}</div>
-                    <div className="buyer-mini-text">{order.preferred_transporter_region || ''}</div>
-                  </td>
-                  <td>{new Date(order.preferred_delivery_date).toLocaleDateString()}</td>
-                  <td>
-                    <span className={`badge badge-${
-                      order.status === 'FULFILLED' ? 'green'
-                        : order.status === 'APPROVED' ? 'blue'
-                        : order.status === 'REQUESTED' ? 'orange'
-                        : order.status === 'REJECTED' ? 'red'
-                        : 'gray'
-                    }`}>
-                      {order.status}
-                    </span>
-                  </td>
-                  <td>{order.shipment_number || 'Not created'}</td>
-                  <td>{new Date(order.created_at).toLocaleDateString()}</td>
-                  <td>{order.reviewed_by_name || 'N/A'}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      {canReview && order.status === 'REQUESTED' && (
-                        <>
-                          <button
-                            type="button"
-                            className="btn-primary"
-                            disabled={updatingOrderId === order.id}
-                            onClick={() => reviewOrder(order.id, 'APPROVED')}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            disabled={updatingOrderId === order.id}
-                            onClick={() => reviewOrder(order.id, 'REJECTED')}
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
+          <div className="orders-card-grid">
+            {filteredOrders.map((order) => (
+              <article key={order.id} className="order-card">
+                <div className="order-card-top">
+                  <div>
+                    <p className="order-card-label">Order</p>
+                    <h3>{order.order_number}</h3>
+                  </div>
+                  <span className={`badge badge-${
+                    order.status === 'FULFILLED' ? 'green'
+                      : order.status === 'APPROVED' ? 'blue'
+                      : order.status === 'REQUESTED' ? 'orange'
+                      : order.status === 'REJECTED' ? 'red'
+                      : 'gray'
+                  }`}>
+                    {order.status}
+                  </span>
+                </div>
 
-                      {canFulfill && order.status === 'APPROVED' && (
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          disabled={updatingOrderId === order.id}
-                          onClick={() => fulfillOrder(order.id)}
-                        >
-                          Fulfill
-                        </button>
-                      )}
-
-                      {(user.role === 'buyer' || user.role === 'admin') && (
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={
-                            updatingOrderId === order.id ||
-                            !['REQUESTED', ...(user.role === 'admin' ? ['APPROVED'] : [])].includes(order.status)
-                          }
-                          onClick={() => cancelOrder(order.id)}
-                        >
-                          Cancel
-                        </button>
-                      )}
+                <div className="order-card-meta">
+                  {user.role !== 'buyer' && (
+                    <div>
+                      <span>Buyer</span>
+                      <strong>{order.buyer_name || 'N/A'}</strong>
                     </div>
-                    {order.rejection_reason && (
-                      <div className="buyer-mini-text" style={{ marginTop: '0.3rem' }}>
-                        Reason: {order.rejection_reason}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  )}
+                  <div>
+                    <span>Batch</span>
+                    <strong>{order.batch_number || 'N/A'}</strong>
+                  </div>
+                  <div>
+                    <span>Product</span>
+                    <strong>{order.product_type || 'N/A'}</strong>
+                  </div>
+                  <div>
+                    <span>Quantity</span>
+                    <strong>{formatQuantity(order.requested_quantity_kg, order.requested_unit || 'kg')}</strong>
+                  </div>
+                  <div>
+                    <span>Delivery Location</span>
+                    <strong>{order.delivery_location || 'N/A'}</strong>
+                  </div>
+                  <div>
+                    <span>Preferred Delivery</span>
+                    <strong>{safeDate(order.preferred_delivery_date)}</strong>
+                  </div>
+                  <div>
+                    <span>Preferred Transporter</span>
+                    <strong>{order.preferred_transporter_name || 'Auto assign'}</strong>
+                    <small>{order.preferred_transporter_region || ''}</small>
+                  </div>
+                  <div>
+                    <span>Shipment</span>
+                    <strong>{order.shipment_number || 'Not created'}</strong>
+                  </div>
+                  <div>
+                    <span>Created</span>
+                    <strong>{safeDate(order.created_at)}</strong>
+                  </div>
+                  <div>
+                    <span>Reviewed By</span>
+                    <strong>{order.reviewed_by_name || 'N/A'}</strong>
+                  </div>
+                </div>
+
+                <div className="order-card-actions">
+                  {canReview && order.status === 'REQUESTED' && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-primary order-action-btn"
+                        disabled={updatingOrderId === order.id}
+                        onClick={() => reviewOrder(order.id, 'APPROVED')}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary order-action-btn"
+                        disabled={updatingOrderId === order.id}
+                        onClick={() => reviewOrder(order.id, 'REJECTED')}
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+
+                  {canFulfill && order.status === 'APPROVED' && (
+                    <button
+                      type="button"
+                      className="btn-primary order-action-btn"
+                      disabled={updatingOrderId === order.id}
+                      onClick={() => fulfillOrder(order.id)}
+                    >
+                      Fulfill
+                    </button>
+                  )}
+
+                  {(user.role === 'buyer' || user.role === 'admin') && (
+                    <button
+                      type="button"
+                      className="btn-secondary order-action-btn"
+                      disabled={
+                        updatingOrderId === order.id ||
+                        !['REQUESTED', ...(user.role === 'admin' ? ['APPROVED'] : [])].includes(order.status)
+                      }
+                      onClick={() => cancelOrder(order.id)}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+
+                {order.rejection_reason && (
+                  <p className="order-rejection-note">
+                    {order.status === 'CANCELLED' ? 'Cancellation reason' : 'Reason'}: {order.rejection_reason}
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
         )}
       </div>
     </div>

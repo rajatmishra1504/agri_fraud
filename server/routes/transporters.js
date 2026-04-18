@@ -6,13 +6,44 @@ const auditLog = require('../middleware/auditLog');
 
 router.get('/marketplace', authenticateToken, async (req, res) => {
   try {
-    const { region = '' } = req.query;
+    const { region = '', source_state = '', destination_state = '' } = req.query;
     const params = [];
     const filters = [`u.role = 'transporter'`, `u.is_active = true`];
 
     if (String(region || '').trim()) {
       params.push(String(region).trim());
-      filters.push(`COALESCE(LOWER(TRIM(u.region)), '') = LOWER(TRIM($${params.length}))`);
+      const regionParam = `$${params.length}`;
+      filters.push(`(
+        COALESCE(LOWER(TRIM(u.region)), '') = LOWER(TRIM(${regionParam}))
+        OR COALESCE(LOWER(TRIM(u.transporter_source_state)), '') = LOWER(TRIM(${regionParam}))
+        OR EXISTS (
+          SELECT 1
+          FROM UNNEST(COALESCE(u.transporter_destination_states, ARRAY[]::TEXT[])) AS ds
+          WHERE LOWER(TRIM(ds)) = LOWER(TRIM(${regionParam}))
+        )
+      )`);
+    }
+
+    if (String(source_state || '').trim()) {
+      params.push(String(source_state).trim());
+      const sourceParam = `$${params.length}`;
+      filters.push(`(
+        COALESCE(LOWER(TRIM(u.transporter_source_state)), '') = LOWER(TRIM(${sourceParam}))
+        OR COALESCE(LOWER(TRIM(u.region)), '') = LOWER(TRIM(${sourceParam}))
+      )`);
+    }
+
+    if (String(destination_state || '').trim()) {
+      params.push(String(destination_state).trim());
+      const destinationParam = `$${params.length}`;
+      filters.push(`(
+        EXISTS (
+          SELECT 1
+          FROM UNNEST(COALESCE(u.transporter_destination_states, ARRAY[]::TEXT[])) AS ds
+          WHERE LOWER(TRIM(ds)) = LOWER(TRIM(${destinationParam}))
+        )
+        OR COALESCE(LOWER(TRIM(u.region)), '') = LOWER(TRIM(${destinationParam}))
+      )`);
     }
 
     const result = await pool.query(
@@ -21,31 +52,53 @@ router.get('/marketplace', authenticateToken, async (req, res) => {
          u.name,
          u.email,
          u.region,
+         u.transporter_source_state,
+         u.transporter_destination_states,
          u.organization,
          u.created_at,
-         COALESCE((
-           SELECT AVG(r.rating)
-           FROM transporter_ratings r
-           WHERE r.transporter_id = u.id
-         ), 0)::numeric(4,2) AS rating,
-         COALESCE((
-           SELECT COUNT(*)
-           FROM transporter_ratings r
-           WHERE r.transporter_id = u.id
-         ), 0)::int AS rating_count,
-         COALESCE((
-           SELECT COUNT(*)
-           FROM shipments s
-           WHERE s.transporter_id = u.id AND s.status = 'DELIVERED'
-         ), 0)::int AS completed_shipments,
-         COALESCE((
-           SELECT COUNT(*)
-           FROM shipments s
-           WHERE s.transporter_id = u.id AND s.status IN ('PENDING', 'IN_TRANSIT')
-         ), 0)::int AS active_shipments
+         rs.base_rating::numeric(4,2) AS rating,
+         rs.rating_count,
+         ss.completed_shipments,
+         ss.active_shipments,
+         fs.active_fraud_flags,
+         fs.fraud_penalty_points,
+         GREATEST(
+           0,
+           rs.base_rating - LEAST(fs.fraud_penalty_points, 4.5)
+         )::numeric(4,2) AS effective_rating
        FROM users u
+       LEFT JOIN LATERAL (
+         SELECT
+           COALESCE(AVG(r.rating), 5) AS base_rating,
+           COALESCE(COUNT(*), 0)::int AS rating_count
+         FROM transporter_ratings r
+         WHERE r.transporter_id = u.id
+       ) rs ON true
+       LEFT JOIN LATERAL (
+         SELECT
+           COALESCE(COUNT(*) FILTER (WHERE s.status = 'DELIVERED'), 0)::int AS completed_shipments,
+           COALESCE(COUNT(*) FILTER (WHERE s.status IN ('PENDING', 'IN_TRANSIT')), 0)::int AS active_shipments
+         FROM shipments s
+         WHERE s.transporter_id = u.id
+       ) ss ON true
+       LEFT JOIN LATERAL (
+         SELECT
+           COALESCE(COUNT(ff.id), 0)::int AS active_fraud_flags,
+           COALESCE(SUM(
+             CASE ff.severity
+               WHEN 'CRITICAL' THEN 1.50
+               WHEN 'HIGH' THEN 1.00
+               WHEN 'MEDIUM' THEN 0.50
+               ELSE 0.25
+             END
+           ), 0)::numeric(6,2) AS fraud_penalty_points
+         FROM shipments s
+         JOIN fraud_flags ff ON ff.shipment_id = s.id
+         WHERE s.transporter_id = u.id
+           AND ff.status IN ('OPEN', 'INVESTIGATING')
+       ) fs ON true
        WHERE ${filters.join(' AND ')}
-       ORDER BY rating DESC, rating_count DESC, completed_shipments DESC, u.name ASC`,
+       ORDER BY effective_rating DESC, rs.base_rating DESC, rs.rating_count DESC, ss.completed_shipments DESC, u.name ASC`,
       params
     );
 

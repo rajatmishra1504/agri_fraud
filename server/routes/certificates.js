@@ -73,7 +73,10 @@ router.post('/',
       }
       
       // Verify batch exists
-      const batchResult = await pool.query('SELECT * FROM batches WHERE id = $1', [batch_id]);
+      const batchResult = await pool.query(
+        'SELECT * FROM batches WHERE id = $1 AND COALESCE(is_deleted, false) = false',
+        [batch_id]
+      );
       if (batchResult.rows.length === 0) {
         return res.status(404).json({ error: 'Batch not found' });
       }
