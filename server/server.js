@@ -109,8 +109,24 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Agri-Fraud Server Live on Port ${PORT}`);
+  
+  // Auto-generate system documentation on startup
+  try {
+    const { generateSystemDocumentation } = require('./utils/projectDocsGenerator');
+    const docPath = path.join(__dirname, '../uploads/Agri-Fraud-System-Documentation.pdf');
+    
+    // Create uploads dir if it doesn't exist
+    const uploadsDir = path.join(__dirname, '../uploads');
+    const fs = require('fs');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+
+    await generateSystemDocumentation(docPath);
+    console.log('📄 System Documentation PDF updated');
+  } catch (err) {
+    console.error('⚠️ Could not generate system docs:', err.message);
+  }
 });
 
 module.exports = app;
