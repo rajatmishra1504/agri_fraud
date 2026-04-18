@@ -90,11 +90,16 @@ app.use('/api/verify', require('./routes/verify'));
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
   app.get('*', (req, res) => {
-    // Only serve index.html for non-API routes
-    if (!req.path.startsWith('/api/')) {
+    // DO NOT redirect API, Uploads, or Docs to the React frontend
+    const isExcluded = req.path.startsWith('/api/') || 
+                       req.path.startsWith('/uploads/') || 
+                       req.path === '/api-docs' || 
+                       req.path === '/health';
+
+    if (!isExcluded) {
         res.sendFile(path.join(__dirname, '../client/build/index.html'));
     } else {
-        res.status(404).json({ error: 'API endpoint not found' });
+        res.status(404).json({ error: 'Endpoint not found' });
     }
   });
 }
