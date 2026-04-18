@@ -17,6 +17,8 @@ const uploadToCloudinary = async (filePath, folder = 'certificates') => {
   try {
     const result = await cloudinary.uploader.upload(filePath, {
       folder: `agri_fraud/${folder}`,
+      use_filename: true,
+      unique_filename: true,
       resource_type: 'auto'
     });
     return result.secure_url;
