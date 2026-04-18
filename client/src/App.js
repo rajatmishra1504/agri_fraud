@@ -74,6 +74,25 @@ const formatHourMinute = (dateValue) => {
   return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+const createLocalAvatarDataUri = (name) => {
+  const trimmedName = String(name || 'User').trim() || 'User';
+  const firstChar = Array.from(trimmedName)[0] || 'U';
+  const initial = firstChar.toUpperCase();
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="${trimmedName}">
+  <defs>
+    <linearGradient id="localAvatarBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8fd3b8" />
+      <stop offset="100%" stop-color="#2f8f7f" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="64" fill="url(#localAvatarBg)" />
+  <text x="50%" y="56%" text-anchor="middle" fill="#ffffff" font-size="54" font-family="Arial, sans-serif" font-weight="700">${initial}</text>
+</svg>`.trim();
+
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -461,7 +480,7 @@ function Login({ setUser }) {
           const latitude = position.coords.latitude;
           const longitude = position.coords.longitude;
 
-          const reverseRes = await fetch(`https://geocoding-api.open-meteo.com/v1/reverse?latitude=${latitude}&longitude=${longitude}&count=1&language=en&format=json`);
+          const reverseRes = await fetch(`${API_URL}/weather/reverse?latitude=${latitude}&longitude=${longitude}`);
           const reverseData = reverseRes.ok ? await reverseRes.json() : null;
           const cityResult = reverseData?.results?.[0];
 
@@ -544,6 +563,11 @@ function Login({ setUser }) {
                           src={review.image} 
                           alt={`${review.name} review`} 
                           className="review-avatar"
+                          onError={(event) => {
+                            if (event.currentTarget.dataset.fallbackApplied === 'true') return;
+                            event.currentTarget.dataset.fallbackApplied = 'true';
+                            event.currentTarget.src = createLocalAvatarDataUri(review.name);
+                          }}
                         />
                         <div>
                           <h6 className="mb-1">{review.name}</h6>
