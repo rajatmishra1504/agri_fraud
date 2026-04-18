@@ -86,9 +86,11 @@ cd client && npm start
 ```
 
 5. **Access Application**
-- Frontend: http://localhost:3000
-- API: http://localhost:5000
-- API Docs: http://localhost:5000/api-docs
+- Frontend: https://agri-fraud-server.onrender.com (Production)
+- API Base: https://agri-fraud-server.onrender.com/api
+- Live API Docs: https://agri-fraud-server.onrender.com/api-docs
+- Local Development: http://localhost:5000/api-docs
+- File Documentation: [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)
 
 ## 📦 Deployment
 
