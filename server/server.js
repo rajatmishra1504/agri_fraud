@@ -38,8 +38,12 @@ if (!isDevelopment) {
   app.use('/api/', limiter);
 }
 
-// 3. Static Assets
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// 3. Static Assets & Persistence
+const uploadsRoot = process.env.UPLOADS_PATH 
+    ? path.resolve(process.env.UPLOADS_PATH) 
+    : path.join(__dirname, '../uploads');
+
+app.use('/uploads', express.static(uploadsRoot));
 
 // 4. PUBLIC DOCUMENTATION & STATUS (Must be before catch-all)
 app.get('/api', (req, res) => res.redirect('/api-docs'));
@@ -123,12 +127,15 @@ app.listen(PORT, async () => {
   // Auto-generate system documentation on startup
   try {
     const { generateSystemDocumentation } = require('./utils/projectDocsGenerator');
-    const docPath = path.join(__dirname, '../uploads/Agri-Fraud-System-Documentation.pdf');
+    const uploadsDir = process.env.UPLOADS_PATH 
+        ? path.resolve(process.env.UPLOADS_PATH) 
+        : path.join(__dirname, '../uploads');
+
+    const docPath = path.join(uploadsDir, 'Agri-Fraud-System-Documentation.pdf');
     
     // Create uploads dir if it doesn't exist
-    const uploadsDir = path.join(__dirname, '../uploads');
     const fs = require('fs');
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
     await generateSystemDocumentation(docPath);
     console.log('📄 System Documentation PDF updated');

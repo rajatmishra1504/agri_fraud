@@ -10,7 +10,11 @@ const path = require('path');
 
 // Configure multer for PDF uploads
 const fs = require('fs');
-const uploadDir = 'uploads/certificates/';
+const baseUploadDir = process.env.UPLOADS_PATH 
+    ? path.resolve(process.env.UPLOADS_PATH) 
+    : path.join(__dirname, '../../uploads');
+
+const uploadDir = path.join(baseUploadDir, 'certificates');
 
 function resolveFileUrl(req, filePath) {
   if (!filePath) return null;
