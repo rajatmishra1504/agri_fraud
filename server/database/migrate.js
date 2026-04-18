@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     organization VARCHAR(255),
+    region VARCHAR(100),
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS batches (
     batch_number VARCHAR(50) UNIQUE NOT NULL,
     farm_name VARCHAR(255) NOT NULL,
     farm_location VARCHAR(255) NOT NULL,
+    region VARCHAR(100),
     product_type VARCHAR(100) NOT NULL,
     quantity_kg DECIMAL(10, 2) NOT NULL,
     batch_unit VARCHAR(20) NOT NULL DEFAULT 'kg',
@@ -145,6 +147,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     delivery_instructions TEXT,
     notes TEXT,
     status order_status DEFAULT 'REQUESTED',
+    preferred_transporter_id INTEGER REFERENCES users(id),
     reviewed_by INTEGER REFERENCES users(id),
     reviewed_at TIMESTAMP,
     rejection_reason TEXT,
@@ -160,15 +163,61 @@ CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status)
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_buyer_batch_status
 ON purchase_orders (buyer_id, batch_id, status);
 
--- Add order_id to shipments idempotently
+-- Transporter Ratings table
+CREATE TABLE IF NOT EXISTS transporter_ratings (
+  id SERIAL PRIMARY KEY,
+  transporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shipment_id INTEGER UNIQUE REFERENCES shipments(id) ON DELETE CASCADE,
+  order_id INTEGER UNIQUE REFERENCES purchase_orders(id) ON DELETE SET NULL,
+  rated_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  review_text TEXT,
+  region VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_transporter_ratings_transporter_id ON transporter_ratings(transporter_id);
+CREATE INDEX IF NOT EXISTS idx_transporter_ratings_region ON transporter_ratings(region);
+
+-- Add missing columns to existing tables idempotently
 DO $$
 BEGIN
+    -- Shipments updates
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='shipments' AND column_name='order_id') THEN
         ALTER TABLE shipments ADD COLUMN order_id INTEGER UNIQUE REFERENCES purchase_orders(id) ON DELETE SET NULL;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='shipments' AND column_name='current_location') THEN
+        ALTER TABLE shipments ADD COLUMN current_location VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='shipments' AND column_name='expected_delivery_date') THEN
+        ALTER TABLE shipments ADD COLUMN expected_delivery_date DATE;
+    END IF;
+    
+    -- Users updates
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='region') THEN
+        ALTER TABLE users ADD COLUMN region VARCHAR(100);
+    END IF;
+    
+    -- Batches updates
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batches' AND column_name='region') THEN
+        ALTER TABLE batches ADD COLUMN region VARCHAR(100);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batches' AND column_name='batch_unit') THEN
+        ALTER TABLE batches ADD COLUMN batch_unit VARCHAR(20) NOT NULL DEFAULT 'kg';
+    END IF;
+
+    -- Purchase Orders updates
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='purchase_orders' AND column_name='preferred_transporter_id') THEN
+        ALTER TABLE purchase_orders ADD COLUMN preferred_transporter_id INTEGER REFERENCES users(id);
+    END IF;
 END$$;
 
+-- Add indices for new columns after they've been confirmed to exist
 CREATE INDEX IF NOT EXISTS idx_shipments_order_id ON shipments(order_id);
+CREATE INDEX IF NOT EXISTS idx_users_region ON users(region);
+CREATE INDEX IF NOT EXISTS idx_batches_region ON batches(region);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_preferred_transporter_id ON purchase_orders(preferred_transporter_id);
 
 -- Fraud Flags table
 CREATE TABLE IF NOT EXISTS fraud_flags (
@@ -263,6 +312,10 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_fraud_cases_updated_at') THEN
         CREATE TRIGGER update_fraud_cases_updated_at BEFORE UPDATE ON fraud_cases
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_transporter_ratings_updated_at') THEN
+        CREATE TRIGGER update_transporter_ratings_updated_at BEFORE UPDATE ON transporter_ratings
             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
     END IF;
 END$$;
