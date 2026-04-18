@@ -17,33 +17,31 @@ const poolConfig = process.env.DATABASE_URL
 const pool = new Pool(poolConfig);
 
 const schema = `
--- Drop existing tables (careful in production!)
-DROP TABLE IF EXISTS audit_logs CASCADE;
-DROP TABLE IF EXISTS fraud_cases CASCADE;
-DROP TABLE IF EXISTS fraud_flags CASCADE;
-DROP TABLE IF EXISTS shipments CASCADE;
-DROP TABLE IF EXISTS purchase_orders CASCADE;
-DROP TABLE IF EXISTS certificates CASCADE;
-DROP TABLE IF EXISTS batches CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-
--- Create ENUM types
-DROP TYPE IF EXISTS user_role CASCADE;
-DROP TYPE IF EXISTS flag_severity CASCADE;
-DROP TYPE IF EXISTS flag_status CASCADE;
-DROP TYPE IF EXISTS case_decision CASCADE;
-DROP TYPE IF EXISTS shipment_status CASCADE;
-DROP TYPE IF EXISTS order_status CASCADE;
-
-CREATE TYPE user_role AS ENUM ('inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin');
-CREATE TYPE flag_severity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
-CREATE TYPE flag_status AS ENUM ('OPEN', 'INVESTIGATING', 'CLOSED');
-CREATE TYPE case_decision AS ENUM ('FRAUD', 'NOT_FRAUD', 'PENDING');
-CREATE TYPE shipment_status AS ENUM ('PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED');
-CREATE TYPE order_status AS ENUM ('REQUESTED', 'APPROVED', 'REJECTED', 'FULFILLED', 'CANCELLED');
+-- Create ENUM types idempotently
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'flag_severity') THEN
+        CREATE TYPE flag_severity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'flag_status') THEN
+        CREATE TYPE flag_status AS ENUM ('OPEN', 'INVESTIGATING', 'CLOSED');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'case_decision') THEN
+        CREATE TYPE case_decision AS ENUM ('FRAUD', 'NOT_FRAUD', 'PENDING');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'shipment_status') THEN
+        CREATE TYPE shipment_status AS ENUM ('PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
+        CREATE TYPE order_status AS ENUM ('REQUESTED', 'APPROVED', 'REJECTED', 'FULFILLED', 'CANCELLED');
+    END IF;
+END$$;
 
 -- Users table
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -60,7 +58,7 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
 
 -- Batches table
-CREATE TABLE batches (
+CREATE TABLE IF NOT EXISTS batches (
     id SERIAL PRIMARY KEY,
     batch_number VARCHAR(50) UNIQUE NOT NULL,
     farm_name VARCHAR(255) NOT NULL,
@@ -75,12 +73,12 @@ CREATE TABLE batches (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_batches_batch_number ON batches(batch_number);
-CREATE INDEX idx_batches_product_type ON batches(product_type);
-CREATE INDEX idx_batches_created_by ON batches(created_by);
+CREATE INDEX IF NOT EXISTS idx_batches_batch_number ON batches(batch_number);
+CREATE INDEX IF NOT EXISTS idx_batches_product_type ON batches(product_type);
+CREATE INDEX IF NOT EXISTS idx_batches_created_by ON batches(created_by);
 
 -- Certificates table
-CREATE TABLE certificates (
+CREATE TABLE IF NOT EXISTS certificates (
     id SERIAL PRIMARY KEY,
     batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
     cert_number VARCHAR(50) UNIQUE NOT NULL,
@@ -96,13 +94,13 @@ CREATE TABLE certificates (
     revoke_reason TEXT
 );
 
-CREATE INDEX idx_certificates_cert_hash ON certificates(cert_hash);
-CREATE INDEX idx_certificates_qr_code ON certificates(qr_code);
-CREATE INDEX idx_certificates_batch_id ON certificates(batch_id);
-CREATE INDEX idx_certificates_issued_by ON certificates(issued_by);
+CREATE INDEX IF NOT EXISTS idx_certificates_cert_hash ON certificates(cert_hash);
+CREATE INDEX IF NOT EXISTS idx_certificates_qr_code ON certificates(qr_code);
+CREATE INDEX IF NOT EXISTS idx_certificates_batch_id ON certificates(batch_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_issued_by ON certificates(issued_by);
 
 -- Shipments table
-CREATE TABLE shipments (
+CREATE TABLE IF NOT EXISTS shipments (
     id SERIAL PRIMARY KEY,
     batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
     shipment_number VARCHAR(50) UNIQUE NOT NULL,
@@ -128,12 +126,12 @@ CREATE TABLE shipments (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_shipments_batch_id ON shipments(batch_id);
-CREATE INDEX idx_shipments_status ON shipments(status);
-CREATE INDEX idx_shipments_transporter_id ON shipments(transporter_id);
+CREATE INDEX IF NOT EXISTS idx_shipments_batch_id ON shipments(batch_id);
+CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status);
+CREATE INDEX IF NOT EXISTS idx_shipments_transporter_id ON shipments(transporter_id);
 
 -- Purchase Orders table
-CREATE TABLE purchase_orders (
+CREATE TABLE IF NOT EXISTS purchase_orders (
     id SERIAL PRIMARY KEY,
     order_number VARCHAR(50) UNIQUE NOT NULL,
     buyer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -155,20 +153,25 @@ CREATE TABLE purchase_orders (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_purchase_orders_buyer_id ON purchase_orders(buyer_id);
-CREATE INDEX idx_purchase_orders_batch_id ON purchase_orders(batch_id);
-CREATE INDEX idx_purchase_orders_status ON purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_buyer_id ON purchase_orders(buyer_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_batch_id ON purchase_orders(batch_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
 
-CREATE INDEX idx_purchase_orders_buyer_batch_status
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_buyer_batch_status
 ON purchase_orders (buyer_id, batch_id, status);
 
-ALTER TABLE shipments
-    ADD COLUMN order_id INTEGER UNIQUE REFERENCES purchase_orders(id) ON DELETE SET NULL;
+-- Add order_id to shipments idempotently
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='shipments' AND column_name='order_id') THEN
+        ALTER TABLE shipments ADD COLUMN order_id INTEGER UNIQUE REFERENCES purchase_orders(id) ON DELETE SET NULL;
+    END IF;
+END$$;
 
-CREATE INDEX idx_shipments_order_id ON shipments(order_id);
+CREATE INDEX IF NOT EXISTS idx_shipments_order_id ON shipments(order_id);
 
 -- Fraud Flags table
-CREATE TABLE fraud_flags (
+CREATE TABLE IF NOT EXISTS fraud_flags (
     id SERIAL PRIMARY KEY,
     flag_type VARCHAR(100) NOT NULL,
     severity flag_severity NOT NULL,
@@ -183,13 +186,13 @@ CREATE TABLE fraud_flags (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_fraud_flags_flag_type ON fraud_flags(flag_type);
-CREATE INDEX idx_fraud_flags_severity ON fraud_flags(severity);
-CREATE INDEX idx_fraud_flags_status ON fraud_flags(status);
-CREATE INDEX idx_fraud_flags_batch_id ON fraud_flags(batch_id);
+CREATE INDEX IF NOT EXISTS idx_fraud_flags_flag_type ON fraud_flags(flag_type);
+CREATE INDEX IF NOT EXISTS idx_fraud_flags_severity ON fraud_flags(severity);
+CREATE INDEX IF NOT EXISTS idx_fraud_flags_status ON fraud_flags(status);
+CREATE INDEX IF NOT EXISTS idx_fraud_flags_batch_id ON fraud_flags(batch_id);
 
 -- Fraud Cases table
-CREATE TABLE fraud_cases (
+CREATE TABLE IF NOT EXISTS fraud_cases (
     id SERIAL PRIMARY KEY,
     flag_id INTEGER REFERENCES fraud_flags(id) ON DELETE CASCADE,
     case_number VARCHAR(50) UNIQUE NOT NULL,
@@ -205,12 +208,12 @@ CREATE TABLE fraud_cases (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_fraud_cases_flag_id ON fraud_cases(flag_id);
-CREATE INDEX idx_fraud_cases_assigned_to ON fraud_cases(assigned_to);
-CREATE INDEX idx_fraud_cases_decision ON fraud_cases(decision);
+CREATE INDEX IF NOT EXISTS idx_fraud_cases_flag_id ON fraud_cases(flag_id);
+CREATE INDEX IF NOT EXISTS idx_fraud_cases_assigned_to ON fraud_cases(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_fraud_cases_decision ON fraud_cases(decision);
 
 -- Audit Logs table
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
     action VARCHAR(100) NOT NULL,
@@ -222,9 +225,9 @@ CREATE TABLE audit_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
-CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
-CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -235,27 +238,37 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create triggers for updated_at
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_batches_updated_at BEFORE UPDATE ON batches
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_shipments_updated_at BEFORE UPDATE ON shipments
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_purchase_orders_updated_at BEFORE UPDATE ON purchase_orders
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_fraud_flags_updated_at BEFORE UPDATE ON fraud_flags
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_fraud_cases_updated_at BEFORE UPDATE ON fraud_cases
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- Create triggers for updated_at idempotently
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_users_updated_at') THEN
+        CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_batches_updated_at') THEN
+        CREATE TRIGGER update_batches_updated_at BEFORE UPDATE ON batches
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_shipments_updated_at') THEN
+        CREATE TRIGGER update_shipments_updated_at BEFORE UPDATE ON shipments
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_purchase_orders_updated_at') THEN
+        CREATE TRIGGER update_purchase_orders_updated_at BEFORE UPDATE ON purchase_orders
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_fraud_flags_updated_at') THEN
+        CREATE TRIGGER update_fraud_flags_updated_at BEFORE UPDATE ON fraud_flags
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_fraud_cases_updated_at') THEN
+        CREATE TRIGGER update_fraud_cases_updated_at BEFORE UPDATE ON fraud_cases
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END$$;
 
 -- Create views for common queries
-CREATE VIEW active_fraud_flags AS
+CREATE OR REPLACE VIEW active_fraud_flags AS
 SELECT 
     ff.*,
     b.batch_number,
@@ -272,7 +285,7 @@ LEFT JOIN shipments s ON ff.shipment_id = s.id
 LEFT JOIN fraud_cases fc ON fc.flag_id = ff.id
 WHERE ff.status != 'CLOSED';
 
-CREATE VIEW fraud_statistics AS
+CREATE OR REPLACE VIEW fraud_statistics AS
 SELECT 
     flag_type,
     severity,
