@@ -99,7 +99,10 @@ if (process.env.NODE_ENV === 'production') {
     if (!isExcluded) {
         res.sendFile(path.join(__dirname, '../client/build/index.html'));
     } else {
-        res.status(404).json({ error: 'Endpoint not found' });
+        res.status(404).json({ 
+            error: 'Resource not found', 
+            message: 'This file or endpoint may have been removed or is unavailable after a redeploy.' 
+        });
     }
   });
 }
