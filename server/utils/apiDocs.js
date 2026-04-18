@@ -84,15 +84,11 @@ const getApiDocsHtml = (baseUrl) => `
             padding: 0.4rem 0;
             transition: all 0.2s;
             opacity: 0.7;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
 
         .sidebar-nav a:hover {
             color: var(--primary);
             opacity: 1;
-            padding-left: 4px;
         }
 
         /* Main Content */
@@ -203,17 +199,6 @@ const getApiDocsHtml = (baseUrl) => `
             font-size: 0.9rem;
         }
 
-        .section-title {
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            color: #475569;
-            margin-bottom: 0.75rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
         pre {
             background: #1e293b;
             color: #e2e8f0;
@@ -225,29 +210,6 @@ const getApiDocsHtml = (baseUrl) => `
             margin-bottom: 1.5rem;
             border: 1px solid #334155;
         }
-
-        .param-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 1.5rem;
-            font-size: 0.85rem;
-        }
-
-        .param-table th {
-            text-align: left;
-            padding: 0.6rem;
-            background: #f8fafc;
-            border-bottom: 2px solid var(--border);
-            color: #64748b;
-        }
-
-        .param-table td {
-            padding: 0.6rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .param-name { font-weight: 600; color: var(--primary-dark); }
-        .param-type { color: #94a3b8; font-size: 0.75rem; }
 
         @media (max-width: 900px) {
             .sidebar { display: none; }
@@ -263,19 +225,16 @@ const getApiDocsHtml = (baseUrl) => `
             <ul>
                 <li><a href="#register">Register</a></li>
                 <li><a href="#login">Login</a></li>
-                <li><a href="#profile">Get Profile</a></li>
             </ul>
             
             <h3>Inventory</h3>
             <ul>
                 <li><a href="#list-batches">List Batches</a></li>
-                <li><a href="#get-batch">Batch Details</a></li>
                 <li><a href="#create-batch">Create Batch</a></li>
             </ul>
 
             <h3>Certificates</h3>
             <ul>
-                <li><a href="#list-certs">List Certs</a></li>
                 <li><a href="#issue-cert">Issue Cert</a></li>
                 <li><a href="#revoke-cert">Revoke Cert</a></li>
                 <li><a href="#verify-cert">Public Verify</a></li>
@@ -283,17 +242,12 @@ const getApiDocsHtml = (baseUrl) => `
 
             <h3>Marketplace</h3>
             <ul>
-                <li><a href="#list-orders">List Orders</a></li>
                 <li><a href="#create-order">Create Request</a></li>
-                <li><a href="#order-review">Order Review</a></li>
                 <li><a href="#transporters">Transporters</a></li>
-                <li><a href="#rate-transporter">Rate Delivery</a></li>
             </ul>
 
             <h3>Shipments</h3>
             <ul>
-                <li><a href="#list-shipments">List Shipments</a></li>
-                <li><a href="#shipment-queue">Shipment Queue</a></li>
                 <li><a href="#create-shipment">Create Shipment</a></li>
                 <li><a href="#update-shipment">Update Transit</a></li>
             </ul>
@@ -302,7 +256,6 @@ const getApiDocsHtml = (baseUrl) => `
             <ul>
                 <li><a href="#fraud-dashboard">Fraud Stats</a></li>
                 <li><a href="#run-scan">Trigger ML Scan</a></li>
-                <li><a href="#list-cases">Manage Cases</a></li>
                 <li><a href="#audit-logs">Audit Logs</a></li>
             </ul>
         </nav>
@@ -311,16 +264,15 @@ const getApiDocsHtml = (baseUrl) => `
     <main class="main-content">
         <header class="header">
             <h1>API Reference Guide</h1>
-            <p>Comprehensive documentation for the Agriculture Fraud Detection Engine. Explore endpoints for traceability, automated risk scanning, and marketplace logic.</p>
+            <p>Welcome to the verified Agri-Fraud API documentation. Use these endpoints to manage agriculture supply chains and fraud detection logic.</p>
             <div style="margin-top: 1.5rem;">
                 <span class="base-url">Base API: ${baseUrl}</span>
             </div>
         </header>
 
-        <!-- AUTH SECTION -->
+        <!-- AUTH -->
         <section id="auth" class="doc-section">
             <h2>Authentication</h2>
-            
             <div id="register" class="endpoint">
                 <div class="endpoint-header">
                     <span class="method post">POST</span>
@@ -328,15 +280,8 @@ const getApiDocsHtml = (baseUrl) => `
                     <span class="role-badge">Public</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Register a new identity. Roles: 'inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin'.</p>
-                    <pre>{
-  "email": "user@agri.com",
-  "password": "strongPassword",
-  "name": "Full Name",
-  "role": "buyer",
-  "region": "Punjab",
-  "organization": "AgriTrade Ltd"
-}</pre>
+                    <p class="endpoint-desc">Register a new user identity (Inspector, Transporter, Buyer, Analyst).</p>
+                    <pre>{ "email": "j@test.com", "password": "pass", "name": "John", "role": "buyer" }</pre>
                 </div>
             </div>
 
@@ -347,19 +292,15 @@ const getApiDocsHtml = (baseUrl) => `
                     <span class="role-badge">Public</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Exchange credentials for a secure JWT Bearer token.</p>
-                    <pre>{
-  "email": "user@agri.com",
-  "password": "strongPassword"
-}</pre>
+                    <p class="endpoint-desc">Generate a JWT Bearer token for secure access.</p>
+                    <pre>{ "email": "j@test.com", "password": "pass" }</pre>
                 </div>
             </div>
         </section>
 
-        <!-- INVENTORY SECTION -->
+        <!-- INVENTORY -->
         <section id="inventory" class="doc-section">
-            <h2>Inventory & Batches</h2>
-
+            <h2>Inventory</h2>
             <div id="list-batches" class="endpoint">
                 <div class="endpoint-header">
                     <span class="method get">GET</span>
@@ -367,7 +308,7 @@ const getApiDocsHtml = (baseUrl) => `
                     <span class="role-badge">Authenticated</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Retrieve agricultural batches with optional filtering by region or product.</p>
+                    <p class="endpoint-desc">Fetch all agricultural batches in the system.</p>
                 </div>
             </div>
 
@@ -375,42 +316,26 @@ const getApiDocsHtml = (baseUrl) => `
                 <div class="endpoint-header">
                     <span class="method post">POST</span>
                     <span class="path">/batches</span>
-                    <span class="role-badge">Inspector | Admin</span>
+                    <span class="role-badge">Inspector</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Onboard a new harvest into the traceability system.</p>
-                    <pre>{
-  "farm_name": "Organic Greens",
-  "farm_location": "Chandigarh",
-  "product_type": "Basmati Rice",
-  "quantity_kg": 2500,
-  "batch_unit": "kg",
-  "harvest_date": "2026-03-20",
-  "quality_grade": "A+"
-}</pre>
+                    <p class="endpoint-desc">Create a new traceable agricultural batch.</p>
+                    <pre>{ "farm_name": "Farm X", "product_type": "Rice", "quantity_kg": 1000 }</pre>
                 </div>
             </div>
         </section>
 
-        <!-- CERTIFICATE SECTION -->
+        <!-- CERTIFICATES -->
         <section id="certificates" class="doc-section">
-            <h2>Certificates & QR</h2>
-
+            <h2>Certificates</h2>
             <div id="issue-cert" class="endpoint">
                 <div class="endpoint-header">
                     <span class="method post">POST</span>
                     <span class="path">/certificates</span>
-                    <span class="role-badge">Inspector | Admin</span>
+                    <span class="role-badge">Inspector</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Issue an official certification. Supports PDF upload or **Automatic PDF generation** if omitted.</p>
-                    <div class="section-title">Multipart Body</div>
-                    <table class="param-table">
-                        <tr><th>Key</th><th>Type</th><th>Optional</th></tr>
-                        <tr><td>batch_id</td><td>Number</td><td>No</td></tr>
-                        <tr><td>pdf</td><td>File (PDF)</td><td>Yes</td></tr>
-                        <tr><td>inspector_notes</td><td>String</td><td>Yes</td></tr>
-                    </table>
+                    <p class="endpoint-desc">Issue a QR-coded certificate (Automatic PDF generation included).</p>
                 </div>
             </div>
 
@@ -418,19 +343,28 @@ const getApiDocsHtml = (baseUrl) => `
                 <div class="endpoint-header">
                     <span class="method post">POST</span>
                     <span class="path">/certificates/:id/revoke</span>
-                    <span class="role-badge">Inspector | Admin | Analyst</span>
+                    <span class="role-badge">Admin</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Invalidates a certificate. Verification will immediately show "Revoked" status.</p>
-                    <pre>{ "reason": "Non-compliance detected during audit" }</pre>
+                    <p class="endpoint-desc">Manually invalidate a certificate for fraud or non-compliance.</p>
+                </div>
+            </div>
+            
+            <div id="verify-cert" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method get">GET</span>
+                    <span class="path">/verify/:qrCode</span>
+                    <span class="role-badge">Public</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Publicly verify the authenticity of a certificate via its QR token.</p>
                 </div>
             </div>
         </section>
 
-        <!-- MARKETPLACE SECTION -->
+        <!-- MARKETPLACE -->
         <section id="marketplace" class="doc-section">
-            <h2>Buyer Marketplace</h2>
-
+            <h2>Marketplace</h2>
             <div id="create-order" class="endpoint">
                 <div class="endpoint-header">
                     <span class="method post">POST</span>
@@ -438,47 +372,33 @@ const getApiDocsHtml = (baseUrl) => `
                     <span class="role-badge">Buyer</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Create a purchase request for a specific batch.</p>
-                    <pre>{
-  "batch_id": 105,
-  "requested_quantity_kg": 500,
-  "delivery_location": "Terminal 1, Port Town",
-  "preferred_transporter_id": null
-}</pre>
+                    <p class="endpoint-desc">Buyer request to purchase a specific batch.</p>
                 </div>
             </div>
 
-            <div id="order-review" class="endpoint">
+            <div id="transporters" class="endpoint">
                 <div class="endpoint-header">
-                    <span class="method patch">PATCH</span>
-                    <span class="path">/orders/:id/review</span>
-                    <span class="role-badge">Admin | Analyst</span>
+                    <span class="method get">GET</span>
+                    <span class="path">/transporters/marketplace</span>
+                    <span class="role-badge">Authenticated</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Approve or Reject a buyer request after checking batch availability.</p>
-                    <pre>{ "status": "APPROVED", "analyst_notes": "Verified buyer credit" }</pre>
+                    <p class="endpoint-desc">Browse transporters by rating and region.</p>
                 </div>
             </div>
         </section>
 
-        <!-- SHIPMENT SECTION -->
+        <!-- SHIPMENTS -->
         <section id="shipments" class="doc-section">
-            <h2>Logistics & Shipments</h2>
-
+            <h2>Shipments</h2>
             <div id="create-shipment" class="endpoint">
                 <div class="endpoint-header">
                     <span class="method post">POST</span>
                     <span class="path">/shipments</span>
-                    <span class="role-badge">Transporter | Admin</span>
+                    <span class="role-badge">Transporter</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Initialize active transit for an approved order.</p>
-                    <pre>{
-  "order_id": 44,
-  "vehicle_number": "TRK-990",
-  "weight_kg": 500,
-  "expected_delivery_date": "2026-05-01"
-}</pre>
+                    <p class="endpoint-desc">Initialize a new shipment transit.</p>
                 </div>
             </div>
 
@@ -486,26 +406,25 @@ const getApiDocsHtml = (baseUrl) => `
                 <div class="endpoint-header">
                     <span class="method put">PUT</span>
                     <span class="path">/shipments/:id</span>
-                    <span class="role-badge">Transporter | Admin</span>
+                    <span class="role-badge">Transporter</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Update location and weight. Setting status to 'DELIVERED' triggers automatic ML scanning.</p>
+                    <p class="endpoint-desc">Update location and weight during transit.</p>
                 </div>
             </div>
         </section>
 
-        <!-- INTELLIGENCE SECTION -->
+        <!-- INTELLIGENCE -->
         <section id="intelligence" class="doc-section">
-            <h2>Fraud Intelligence</h2>
-
+            <h2>Intelligence</h2>
             <div id="fraud-dashboard" class="endpoint">
                 <div class="endpoint-header">
                     <span class="method get">GET</span>
                     <span class="path">/fraud/dashboard</span>
-                    <span class="role-badge">Admin | Analyst</span>
+                    <span class="role-badge">Analyst</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">High-level statistics on flags, open cases, and systemic anomaly scores.</p>
+                    <p class="endpoint-desc">View fraud flags and systemic risk stats.</p>
                 </div>
             </div>
 
@@ -513,13 +432,13 @@ const getApiDocsHtml = (baseUrl) => `
                 <div class="endpoint-header">
                     <span class="method post">POST</span>
                     <span class="path">/fraud/scan</span>
-                    <span class="role-badge">Admin | Analyst</span>
+                    <span class="role-badge">Analyst</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Trigger the Random Forest classifier to analyze shipment patterns and flag risks.</p>
+                    <p class="endpoint-desc">Manually trigger the ML scanning engine.</p>
                 </div>
             </div>
-            
+
             <div id="audit-logs" class="endpoint">
                 <div class="endpoint-header">
                     <span class="method get">GET</span>
@@ -527,13 +446,13 @@ const getApiDocsHtml = (baseUrl) => `
                     <span class="role-badge">Admin</span>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-desc">Full immutable trail of system actions (Logins, Issuance, Revocation).</p>
+                    <p class="endpoint-desc">Full system activity trail.</p>
                 </div>
             </div>
         </section>
 
         <footer style="margin-top: 5rem; text-align: center; color: var(--text-muted); font-size: 0.8rem; padding-bottom: 3rem;">
-            &copy; 2026 Agriculture Fraud Detection System. Professional API Explorer v1.2.
+            &copy; 2026 Agriculture Fraud Detection System. Professional API Explorer.
         </footer>
     </main>
 
