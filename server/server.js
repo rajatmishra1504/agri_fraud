@@ -59,59 +59,14 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API documentation
+// API documentation - Visual Explorer
+const { getApiDocsHtml } = require('./utils/apiDocs');
 app.get('/api-docs', (req, res) => {
-  res.json({
-    name: 'Agriculture Fraud Detection API',
-    version: '1.0.0',
-    endpoints: {
-      auth: {
-        'POST /api/auth/register': 'Register new user',
-        'POST /api/auth/login': 'Login user'
-      },
-      batches: {
-        'GET /api/batches': 'List all batches',
-        'POST /api/batches': 'Create new batch',
-        'GET /api/batches/:id': 'Get batch details'
-      },
-      certificates: {
-        'GET /api/certificates': 'List certificates',
-        'POST /api/certificates': 'Issue certificate',
-        'GET /api/certificates/:id': 'Get certificate details'
-      },
-      shipments: {
-        'GET /api/shipments': 'List shipments',
-        'POST /api/shipments': 'Create shipment',
-        'PUT /api/shipments/:id': 'Update shipment'
-      },
-      orders: {
-        'GET /api/orders/my': 'List current buyer purchase requests',
-        'POST /api/orders': 'Create purchase request',
-        'GET /api/orders': 'List all purchase requests (admin/analyst)',
-        'PATCH /api/orders/:id/review': 'Approve or reject an order (admin/analyst)',
-        'PATCH /api/orders/:id/fulfill': 'Fulfill an approved order (admin)',
-        'PATCH /api/orders/:id/cancel': 'Cancel an order (buyer/admin)'
-      },
-      transporters: {
-        'GET /api/transporters/marketplace': 'Browse transporter marketplace with ratings and regions',
-        'POST /api/transporters/:id/rate': 'Rate a transporter after delivery'
-      },
-      fraud: {
-        'GET /api/fraud/flags': 'List fraud flags',
-        'GET /api/fraud/dashboard': 'Dashboard stats',
-        'POST /api/fraud/scan': 'Trigger fraud scan'
-      },
-      cases: {
-        'GET /api/cases': 'List cases',
-        'POST /api/cases': 'Create case',
-        'PUT /api/cases/:id': 'Update case',
-        'POST /api/cases/:id/close': 'Close case'
-      },
-      verify: {
-        'GET /api/verify/:qrCode': 'Verify certificate'
-      }
-    }
-  });
+  const protocol = req.protocol;
+  const host = req.get('host');
+  const baseUrl = `${protocol}://${host}/api`;
+  
+  res.send(getApiDocsHtml(baseUrl));
 });
 
 // Serve React app in production
