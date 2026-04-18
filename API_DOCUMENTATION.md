@@ -59,6 +59,7 @@ Response:
   "farm_location": "Punjab, India",
   "product_type": "Wheat",
   "quantity_kg": 5000,
+  "batch_unit": "kg",
   "harvest_date": "2024-01-15",
   "quality_grade": "A"
 }
@@ -153,6 +154,7 @@ Note:
 {
   "batch_id": 1,
   "requested_quantity_kg": 1200,
+  "requested_unit": "kg",
   "delivery_location": "Delhi Central Warehouse",
   "preferred_delivery_date": "2026-04-12",
   "delivery_contact_name": "Rohit Sharma",
