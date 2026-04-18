@@ -297,8 +297,30 @@ class FraudDetectionEngine {
       JSON.stringify(flagData.evidence_json),
       flagData.description
     ]);
+
+    const flag = result.rows[0];
+
+    // ✅ AUTOMATIC REVOCATION: If flag is HIGH severity, invalidate associated certificates
+    if (flag.severity === 'HIGH') {
+      try {
+        if (flag.cert_id) {
+          await pool.query(
+            `UPDATE certificates SET is_valid = false, revoke_reason = $1, revoked_at = NOW() WHERE id = $2`,
+            [`Auto-revoked: ${flag.description}`, flag.cert_id]
+          );
+        } else if (flag.batch_id) {
+          // If flag is on a batch, invalidate ALL certificates for that batch
+          await pool.query(
+            `UPDATE certificates SET is_valid = false, revoke_reason = $1, revoked_at = NOW() WHERE batch_id = $2`,
+            [`Auto-revoked due to batch fraud: ${flag.description}`, flag.batch_id]
+          );
+        }
+      } catch (err) {
+        console.error('Failed to auto-revoke certificates:', err);
+      }
+    }
     
-    return result.rows[0];
+    return flag;
   }
 
   async calculateAnomalyScore(shipmentData) {

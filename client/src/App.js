@@ -2095,20 +2095,42 @@ function CertificateList({ user }) {
     </td>
 
     <td>
-      {cert.pdf_url ? (
-        <a
-          href={cert.certificate_pdf_url || getFileUrl(cert.pdf_url)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-secondary cert-view-btn"
-        >
-          View Certificate
-        </a>
-      ) : (
-        <span className="buyer-mini-text">No PDF</span>
-      )}
-    </td>
+      <div className="cert-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+        {cert.pdf_url ? (
+          <a
+            href={cert.certificate_pdf_url || getFileUrl(cert.pdf_url)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary cert-view-btn"
+          >
+            View PDF
+          </a>
+        ) : (
+          <span className="buyer-mini-text">No PDF</span>
+        )}
 
+        {(user.role === 'inspector' || user.role === 'admin') && cert.is_valid && (
+          <button 
+            className="btn-secondary" 
+            style={{ color: '#ef4444', borderColor: '#ef4444' }}
+            onClick={async () => {
+              const reason = window.prompt("Enter reason for revocation:", "Safety concern");
+              if (!reason) return;
+              try {
+                await api.post(`/certificates/${cert.id}/revoke`, { reason });
+                alert("Certificate revoked successfully.");
+                const res = await api.get('/certificates');
+                setCertificates(res.data.certificates);
+              } catch (err) {
+                alert("Failed to revoke certificate.");
+              }
+            }}
+          >
+            Revoke
+          </button>
+        )}
+      </div>
+    </td>
   </tr>
 ))}
           </tbody>

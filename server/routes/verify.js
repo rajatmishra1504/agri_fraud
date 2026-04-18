@@ -26,6 +26,22 @@ router.get('/:qrCode', async (req, res) => {
     const cert = result.rows[0];
     const hasFraudFlags = cert.fraud_flag_count > 0;
     
+    // Check for expiration (e.g., 180 days)
+    const issueDate = new Date(cert.issued_at);
+    const currentDate = new Date();
+    const daysSinceIssue = Math.floor((currentDate - issueDate) / (1000 * 60 * 60 * 24));
+    const isExpired = daysSinceIssue > 180;
+
+    // Determine the invalidity reason if applicable
+    let invalidReason = null;
+    if (!cert.is_valid) {
+      invalidReason = cert.revoke_reason || 'Certificate has been manually revoked by the issuing authority.';
+    } else if (isExpired) {
+      invalidReason = `Certificate expired: Valid for 180 days (issued ${daysSinceIssue} days ago).`;
+    } else if (hasFraudFlags) {
+      invalidReason = 'Warning: This batch has been flagged for potential fraud and is under investigation.';
+    }
+
     await pool.query(
       `INSERT INTO audit_logs (action, entity_type, entity_id, metadata, ip_address)
        VALUES ('VERIFY_CERTIFICATE', 'certificate', $1, $2, $3)`,
@@ -33,9 +49,11 @@ router.get('/:qrCode', async (req, res) => {
     );
     
     res.json({
-      valid: cert.is_valid && !hasFraudFlags,
+      valid: cert.is_valid && !hasFraudFlags && !isExpired,
       certificate: cert,
-      warnings: hasFraudFlags ? ['This batch has fraud flags'] : [],
+      invalid_reason: invalidReason,
+      age_days: daysSinceIssue,
+      warnings: hasFraudFlags ? ['This batch has ongoing fraud investigations'] : [],
       fraud_flag_count: cert.fraud_flag_count
     });
   } catch (error) {
