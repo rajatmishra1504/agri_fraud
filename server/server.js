@@ -42,6 +42,8 @@ if (!isDevelopment) {
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // 4. PUBLIC DOCUMENTATION & STATUS (Must be before catch-all)
+app.get('/api', (req, res) => res.redirect('/api-docs'));
+
 app.get('/api-docs', (req, res) => {
   const protocol = req.protocol;
   const host = req.get('host');
