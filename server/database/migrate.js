@@ -211,6 +211,15 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='purchase_orders' AND column_name='preferred_transporter_id') THEN
         ALTER TABLE purchase_orders ADD COLUMN preferred_transporter_id INTEGER REFERENCES users(id);
     END IF;
+
+    -- 6. Performance & Data Integrity Indices
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_shipments_batch_id ON shipments(batch_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_certificates_qr_code ON certificates(qr_code)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_certificates_cert_hash ON certificates(cert_hash)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_fraud_flags_severity ON fraud_flags(severity)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_fraud_flags_batch_id ON fraud_flags(batch_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)';
 END$$;
 
 -- Add indices for new columns after they've been confirmed to exist

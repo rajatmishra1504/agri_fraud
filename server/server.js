@@ -8,6 +8,8 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
+const pool = require('./database/db');
+const { authenticateToken, authorizeRoles } = require('./middleware/auth');
 const isDevelopment = (process.env.NODE_ENV || 'development') === 'development';
 
 // Trust proxy if behind a load balancer
@@ -87,10 +89,46 @@ app.use((err, req, res, next) => {
     }
   });
 });
-
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
+});
+
+// System Health & Developer Telemetry
+app.get('/api/system/health', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const dbStart = Date.now();
+    await pool.query('SELECT 1');
+    const dbLatency = Date.now() - dbStart;
+
+    res.json({
+      status: 'healthy',
+      version: '1.2.0',
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      db_latency_ms: dbLatency,
+      environment: process.env.NODE_ENV,
+      node_version: process.version,
+      platform: process.platform,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({ status: 'unhealthy', error: error.message });
+  }
+});
+
+// Centralized Error Handler (Developer Best Practice)
+app.use((err, req, res, next) => {
+  console.error('🔥 Server Error:', err.stack);
+  
+  const statusCode = err.status || 500;
+  res.status(statusCode).json({
+    error: process.env.NODE_ENV === 'production' 
+      ? 'An internal server error occurred' 
+      : err.message,
+    code: err.code || 'INTERNAL_ERROR',
+    stack: process.env.NODE_ENV === 'production' ? null : err.stack
+  });
 });
 
 const PORT = process.env.PORT || 5000;
