@@ -93,9 +93,11 @@ router.post('/',
 
       // ✅ AUTOMATIC PDF GENERATION (If no file uploaded)
       const { generateCertificatePdf } = require('../utils/pdfGenerator');
-      if (!pdfUrl) {
+      let localPdfPath = req.file ? path.join(uploadDir, req.file.filename) : null;
+
+      if (!localPdfPath) {
         const autoPdfName = `auto-${certNumber}.pdf`;
-        const autoPdfPath = path.join(uploadDir, autoPdfName);
+        localPdfPath = path.join(uploadDir, autoPdfName);
         
         await generateCertificatePdf({
             cert_number: certNumber,
@@ -108,9 +110,18 @@ router.post('/',
             quality_grade: batchResult.rows[0].quality_grade,
             inspector_notes: inspector_notes,
             inspector_name: req.user.name
-        }, qrCodeUrl, autoPdfPath);
+        }, qrCodeUrl, localPdfPath);
+      }
 
-        pdfUrl = `/uploads/certificates/${autoPdfName}`;
+      // ✅ UPLOAD TO CLOUDINARY FOR PERMANENCY
+      const { uploadToCloudinary } = require('../utils/cloudinary');
+      try {
+        const cloudinaryUrl = await uploadToCloudinary(localPdfPath, 'certificates');
+        pdfUrl = cloudinaryUrl; // Overwrite local path with permanent cloud URL
+      } catch (uploadErr) {
+        console.error('Cloudinary upload fallback:', uploadErr);
+        // If Cloudinary fails, we keep the pdfUrl as the local path (ephemeral)
+        pdfUrl = req.file ? `/uploads/certificates/${req.file.filename}` : `/uploads/certificates/${path.basename(localPdfPath)}`;
       }
       
       const result = await pool.query(`
