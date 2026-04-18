@@ -131,6 +131,7 @@ router.post('/',
       const {
         farm_name,
         farm_location,
+        region,
         product_type,
         quantity_kg,
         batch_unit,
@@ -139,6 +140,7 @@ router.post('/',
       } = req.body;
 
       const normalizedUnit = String(batch_unit || 'kg').trim().toLowerCase();
+      const normalizedRegion = String(region || farm_location || '').trim();
 
       if (!normalizedUnit) {
         return res.status(400).json({ error: 'batch_unit is required' });
@@ -149,15 +151,16 @@ router.post('/',
       
       const result = await pool.query(`
         INSERT INTO batches (
-          batch_number, farm_name, farm_location, product_type,
+          batch_number, farm_name, farm_location, region, product_type,
           quantity_kg, batch_unit, harvest_date, quality_grade, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
       `, [
         batchNumber,
         farm_name,
         farm_location,
+        normalizedRegion,
         product_type,
         quantity_kg,
         normalizedUnit,

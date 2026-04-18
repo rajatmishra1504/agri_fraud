@@ -32,6 +32,7 @@ ALTER TABLE purchase_orders
   ADD COLUMN IF NOT EXISTS delivery_contact_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS delivery_contact_phone VARCHAR(20),
   ADD COLUMN IF NOT EXISTS delivery_instructions TEXT,
+  ADD COLUMN IF NOT EXISTS preferred_transporter_id INTEGER REFERENCES users(id),
   ADD COLUMN IF NOT EXISTS requested_unit VARCHAR(20) DEFAULT 'kg',
   ADD COLUMN IF NOT EXISTS reviewed_by INTEGER REFERENCES users(id),
   ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP,
@@ -41,11 +42,23 @@ ALTER TABLE purchase_orders
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
 ALTER TABLE batches
-  ADD COLUMN IF NOT EXISTS batch_unit VARCHAR(20) DEFAULT 'kg';
+  ADD COLUMN IF NOT EXISTS batch_unit VARCHAR(20) DEFAULT 'kg',
+  ADD COLUMN IF NOT EXISTS region VARCHAR(100);
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS region VARCHAR(100);
 
 UPDATE batches
 SET batch_unit = COALESCE(NULLIF(TRIM(batch_unit), ''), 'kg')
 WHERE batch_unit IS NULL OR TRIM(batch_unit) = '';
+
+UPDATE batches
+SET region = COALESCE(NULLIF(TRIM(region), ''), farm_location)
+WHERE region IS NULL OR TRIM(region) = '';
+
+UPDATE users
+SET region = COALESCE(NULLIF(TRIM(region), ''), organization)
+WHERE region IS NULL OR TRIM(region) = '';
 
 ALTER TABLE batches
   ALTER COLUMN batch_unit SET NOT NULL;
@@ -53,6 +66,9 @@ ALTER TABLE batches
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_buyer_id ON purchase_orders(buyer_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_batch_id ON purchase_orders(batch_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_preferred_transporter_id ON purchase_orders(preferred_transporter_id);
+CREATE INDEX IF NOT EXISTS idx_batches_region ON batches(region);
+CREATE INDEX IF NOT EXISTS idx_users_region ON users(region);
 
 UPDATE purchase_orders
 SET delivery_location = COALESCE(delivery_location, 'Pending delivery location'),
@@ -85,6 +101,24 @@ ALTER TABLE shipments
 
 CREATE INDEX IF NOT EXISTS idx_shipments_order_id ON shipments(order_id);
 
+CREATE TABLE IF NOT EXISTS transporter_ratings (
+  id SERIAL PRIMARY KEY,
+  transporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shipment_id INTEGER REFERENCES shipments(id) ON DELETE CASCADE,
+  order_id INTEGER REFERENCES purchase_orders(id) ON DELETE SET NULL,
+  rated_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  review_text TEXT,
+  region VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (shipment_id),
+  UNIQUE (order_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_transporter_ratings_transporter_id ON transporter_ratings(transporter_id);
+CREATE INDEX IF NOT EXISTS idx_transporter_ratings_region ON transporter_ratings(region);
+
 DO $$
 BEGIN
   IF EXISTS (
@@ -102,6 +136,27 @@ BEGIN
   ) THEN
     CREATE TRIGGER update_purchase_orders_updated_at
       BEFORE UPDATE ON purchase_orders
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'transporter_ratings'
+  ) AND EXISTS (
+    SELECT 1
+    FROM pg_proc
+    WHERE proname = 'update_updated_at_column'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgname = 'update_transporter_ratings_updated_at'
+  ) THEN
+    CREATE TRIGGER update_transporter_ratings_updated_at
+      BEFORE UPDATE ON transporter_ratings
       FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
   END IF;
 END$$;

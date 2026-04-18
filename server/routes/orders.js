@@ -26,6 +26,8 @@ function buildOrderQuery(whereClause = '', includeWhere = false) {
   return `SELECT po.*, b.batch_number, b.product_type, b.farm_name, b.farm_location as pickup_location, b.quality_grade,
                  buyer.name as buyer_name,
                  reviewer.name as reviewed_by_name,
+       pt.name as preferred_transporter_name,
+       pt.region as preferred_transporter_region,
                  s.id as shipment_id,
                  s.shipment_number,
                  s.status as shipment_status,
@@ -35,6 +37,7 @@ function buildOrderQuery(whereClause = '', includeWhere = false) {
           JOIN batches b ON po.batch_id = b.id
           LEFT JOIN users buyer ON po.buyer_id = buyer.id
           LEFT JOIN users reviewer ON po.reviewed_by = reviewer.id
+     LEFT JOIN users pt ON po.preferred_transporter_id = pt.id
           LEFT JOIN shipments s ON s.order_id = po.id
           ${includeWhere ? `WHERE ${whereClause}` : ''}
           ORDER BY po.created_at DESC`;
@@ -58,7 +61,8 @@ router.post('/',
         preferred_delivery_date,
         delivery_contact_name,
         delivery_contact_phone,
-        delivery_instructions
+        delivery_instructions,
+        preferred_transporter_id
       } = req.body;
 
       if (!batch_id) {
@@ -156,6 +160,21 @@ router.post('/',
       const normalizedDeliveryInstructions = delivery_instructions ? String(delivery_instructions).trim() : null;
       const normalizedNotes = notes ? String(notes).trim() : null;
       const preferredDateIso = preferredDate.toISOString().slice(0, 10);
+      let transporterIdValue = null;
+
+      if (preferred_transporter_id !== undefined && preferred_transporter_id !== null && String(preferred_transporter_id).trim() !== '') {
+        const transporterResult = await client.query(
+          `SELECT id, name, region FROM users WHERE id = $1 AND role = 'transporter' AND is_active = true`,
+          [preferred_transporter_id]
+        );
+
+        if (transporterResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Preferred transporter not found' });
+        }
+
+        transporterIdValue = transporterResult.rows[0].id;
+      }
 
       // Guard against accidental double-submit clicks: same payload within a short window.
       const duplicateOrderResult = await client.query(
@@ -209,10 +228,11 @@ router.post('/',
            delivery_contact_name,
            delivery_contact_phone,
            delivery_instructions,
+           preferred_transporter_id,
            notes,
            status
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'REQUESTED')
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'REQUESTED')
          RETURNING *`,
         [
           `ORD-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`,
@@ -225,6 +245,7 @@ router.post('/',
           normalizedDeliveryContactName,
           normalizedDeliveryContactPhone,
           normalizedDeliveryInstructions,
+          transporterIdValue,
           normalizedNotes
         ]
       );

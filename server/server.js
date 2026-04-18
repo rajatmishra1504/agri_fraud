@@ -48,6 +48,7 @@ app.use('/api/shipments', require('./routes/shipments'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/fraud', require('./routes/fraud'));
 app.use('/api/cases', require('./routes/cases'));
+app.use('/api/transporters', require('./routes/transporters'));
 app.use('/api/audit', require('./routes/audit'));
 app.use('/api/verify', require('./routes/verify'));
 app.use('/api/weather', require('./routes/weather'));
@@ -90,6 +91,10 @@ app.get('/api-docs', (req, res) => {
         'PATCH /api/orders/:id/review': 'Approve or reject an order (admin/analyst)',
         'PATCH /api/orders/:id/fulfill': 'Fulfill an approved order (admin)',
         'PATCH /api/orders/:id/cancel': 'Cancel an order (buyer/admin)'
+      },
+      transporters: {
+        'GET /api/transporters/marketplace': 'Browse transporter marketplace with ratings and regions',
+        'POST /api/transporters/:id/rate': 'Rate a transporter after delivery'
       },
       fraud: {
         'GET /api/fraud/flags': 'List fraud flags',

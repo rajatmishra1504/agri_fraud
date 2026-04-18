@@ -74,6 +74,11 @@ const formatHourMinute = (dateValue) => {
   return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+const formatRating = (value) => {
+  const numericValue = Number(value || 0);
+  return Number.isFinite(numericValue) ? numericValue.toFixed(2) : '0.00';
+};
+
 const createLocalAvatarDataUri = (name) => {
   const trimmedName = String(name || 'User').trim() || 'User';
   const firstChar = Array.from(trimmedName)[0] || 'U';
@@ -290,6 +295,7 @@ function Login({ setUser }) {
   const [formData, setFormData] = useState({
     name: '',
     organization: '',
+    region: '',
     role: 'buyer'
   });
 
@@ -647,6 +653,13 @@ function Login({ setUser }) {
                       />
                       <input
                         type="text"
+                        placeholder="Region / Service Area"
+                        value={formData.region || ''}
+                        onChange={(e) => setFormData({...formData, region: e.target.value})}
+                        required={['inspector', 'transporter', 'fraud_analyst'].includes(formData.role)}
+                      />
+                      <input
+                        type="text"
                         placeholder="Organization"
                         value={formData.organization}
                         onChange={(e) => setFormData({...formData, organization: e.target.value})}
@@ -890,6 +903,10 @@ function BuyerDashboard({ user }) {
   const [products, setProducts] = useState([]);
   const [shipments, setShipments] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [transporters, setTransporters] = useState([]);
+  const [transportersLoading, setTransportersLoading] = useState(false);
+  const [transportersError, setTransportersError] = useState('');
+  const [transporterRegionFilter, setTransporterRegionFilter] = useState(user?.region || '');
   const [deliveryDetailsByBatch, setDeliveryDetailsByBatch] = useState({});
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [activeBuyFormBatchId, setActiveBuyFormBatchId] = useState(null);
@@ -900,6 +917,7 @@ function BuyerDashboard({ user }) {
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifying, setVerifying] = useState(false);
   const [orderingBatchId, setOrderingBatchId] = useState(null);
+  const [ratingShipmentId, setRatingShipmentId] = useState(null);
 
   const getDefaultDeliveryDetails = useCallback((product) => ({
     delivery_location: '',
@@ -907,9 +925,29 @@ function BuyerDashboard({ user }) {
     delivery_contact_name: '',
     delivery_contact_phone: '',
     delivery_instructions: '',
+    preferred_transporter_id: '',
+    preferred_transporter_name: '',
     requested_quantity: String(product?.available_quantity_kg ?? ''),
     requested_unit: product?.batch_unit || 'kg'
   }), []);
+
+  const loadTransporters = useCallback(async (region) => {
+    setTransportersLoading(true);
+    setTransportersError('');
+
+    try {
+      const response = await api.get('/transporters/marketplace', {
+        params: region ? { region } : {}
+      });
+
+      setTransporters(Array.isArray(response.data.transporters) ? response.data.transporters : []);
+    } catch (error) {
+      setTransporters([]);
+      setTransportersError('Transporter marketplace is unavailable right now.');
+    } finally {
+      setTransportersLoading(false);
+    }
+  }, []);
 
   const getMergedDeliveryDetails = useCallback((product) => {
     const existing = deliveryDetailsByBatch[product.batch_id] || {};
@@ -971,6 +1009,17 @@ function BuyerDashboard({ user }) {
     setShowBuyModal(true);
   };
 
+  const chooseTransporterForBatch = (batchId, transporter) => {
+    setDeliveryDetailsByBatch((prev) => ({
+      ...prev,
+      [batchId]: {
+        ...(prev[batchId] || {}),
+        preferred_transporter_id: transporter?.id || '',
+        preferred_transporter_name: transporter?.name || ''
+      }
+    }));
+  };
+
   useEffect(() => {
     Promise.all([
       api.get('/certificates?limit=40'),
@@ -985,6 +1034,10 @@ function BuyerDashboard({ user }) {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadTransporters(transporterRegionFilter.trim());
+  }, [loadTransporters, transporterRegionFilter]);
 
   const extractQrCode = (inputValue) => {
     const trimmed = inputValue.trim();
@@ -1058,6 +1111,7 @@ function BuyerDashboard({ user }) {
         delivery_contact_name: deliveryDetails.delivery_contact_name?.trim() || null,
         delivery_contact_phone: deliveryDetails.delivery_contact_phone?.trim() || null,
         delivery_instructions: deliveryDetails.delivery_instructions?.trim() || null,
+        preferred_transporter_id: deliveryDetails.preferred_transporter_id || null,
         notes: `Buyer request for ${requestedQuantity} ${product.batch_unit} of ${product.product_type} (${product.batch_number})`
       });
 
@@ -1083,6 +1137,36 @@ function BuyerDashboard({ user }) {
       alert(err.response?.data?.error || 'Failed to create purchase request');
     } finally {
       setOrderingBatchId(null);
+    }
+  };
+
+  const rateTransporter = async (shipment) => {
+    const rating = window.prompt(`Rate transporter ${shipment.transporter_name || ''} from 1-5`, '5');
+    if (!rating) return;
+
+    const normalizedRating = Number(rating);
+    if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+      alert('Please enter a rating from 1 to 5.');
+      return;
+    }
+
+    const reviewText = window.prompt('Optional feedback for the transporter:', '') || '';
+
+    setRatingShipmentId(shipment.id);
+    try {
+      await api.post(`/transporters/${shipment.transporter_id}/rate`, {
+        shipment_id: shipment.id,
+        order_id: shipment.order_id,
+        rating: normalizedRating,
+        review_text: reviewText.trim() || null
+      });
+      alert('Transporter rated successfully.');
+      const refreshedShipments = await api.get('/shipments');
+      setShipments(refreshedShipments.data.shipments || []);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to rate transporter');
+    } finally {
+      setRatingShipmentId(null);
     }
   };
 
@@ -1131,6 +1215,68 @@ function BuyerDashboard({ user }) {
             ) : (
               <p>{verifyResult.message}</p>
             )}
+          </div>
+        )}
+      </div>
+
+      <div className="card transporter-marketplace-card">
+        <div className="marketplace-header">
+          <div>
+            <h2><Truck size={20} /> Transporter Marketplace</h2>
+            <p>Choose a transporter by region, reliability, and completed delivery history.</p>
+          </div>
+          <div className="marketplace-filter-row">
+            <label htmlFor="transporterRegionFilter">Region</label>
+            <input
+              id="transporterRegionFilter"
+              type="text"
+              value={transporterRegionFilter}
+              onChange={(e) => setTransporterRegionFilter(e.target.value)}
+              placeholder="e.g. Delhi, North Zone"
+            />
+          </div>
+        </div>
+
+        {transportersError && <div className="error-msg">{transportersError}</div>}
+        {transportersLoading ? (
+          <p className="buyer-empty">Loading transporter marketplace...</p>
+        ) : transporters.length === 0 ? (
+          <p className="buyer-empty">No transporters found for this region. Try a broader search.</p>
+        ) : (
+          <div className="transporter-market-grid">
+            {transporters.slice(0, 6).map((transporter) => (
+              <article key={transporter.id} className="transporter-card">
+                <div className="transporter-card-top">
+                  <div>
+                    <h3>{transporter.name}</h3>
+                    <p>{transporter.region || 'Unassigned region'}</p>
+                  </div>
+                  <span className="badge badge-blue">{formatRating(transporter.rating)} ★</span>
+                </div>
+
+                <div className="transporter-metrics">
+                  <div><span>Reviews</span><strong>{transporter.rating_count || 0}</strong></div>
+                  <div><span>Delivered</span><strong>{transporter.completed_shipments || 0}</strong></div>
+                  <div><span>Active</span><strong>{transporter.active_shipments || 0}</strong></div>
+                  <div><span>Coverage</span><strong>{transporter.region || 'Global'}</strong></div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    if (activeBuyFormBatchId) {
+                      chooseTransporterForBatch(activeBuyFormBatchId, transporter);
+                      return;
+                    }
+
+                    alert('Open a product order first, then choose a transporter inside the order form.');
+                  }}
+                >
+                  Use for current order
+                </button>
+              </article>
+            ))}
           </div>
         )}
       </div>
@@ -1291,8 +1437,10 @@ function BuyerDashboard({ user }) {
                   <th>Route</th>
                   <th>Status</th>
                   <th>Transporter</th>
+                  <th>Region</th>
                   <th>Shipped</th>
                   <th>Delivered</th>
+                  {user.role === 'buyer' && <th>Rate</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1310,8 +1458,21 @@ function BuyerDashboard({ user }) {
                       </span>
                     </td>
                     <td>{shipment.transporter_name || 'N/A'}</td>
+                    <td>{shipment.preferred_transporter_region || shipment.transporter_region || 'N/A'}</td>
                     <td>{shipment.shipped_at ? new Date(shipment.shipped_at).toLocaleString() : 'N/A'}</td>
                     <td>{shipment.delivered_at ? new Date(shipment.delivered_at).toLocaleString() : 'In transit'}</td>
+                    {user.role === 'buyer' && (
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={shipment.status !== 'DELIVERED' || ratingShipmentId === shipment.id || !shipment.transporter_id}
+                          onClick={() => rateTransporter(shipment)}
+                        >
+                          {ratingShipmentId === shipment.id ? 'Rating...' : 'Rate'}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1515,6 +1676,40 @@ function BuyerDashboard({ user }) {
                         }))}
                       />
                     </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Preferred Transporter (Optional)</label>
+                      <select
+                        className="form-control"
+                        value={deliveryDetails.preferred_transporter_id || ''}
+                        onChange={(e) => {
+                          const selectedTransporter = transporters.find((item) => String(item.id) === String(e.target.value));
+                          setDeliveryDetailsByBatch((prev) => ({
+                            ...prev,
+                            [activeBuyFormBatchId]: {
+                              ...deliveryDetails,
+                              preferred_transporter_id: e.target.value,
+                              preferred_transporter_name: selectedTransporter?.name || ''
+                            }
+                          }));
+                        }}
+                      >
+                        <option value="">Auto assign from marketplace</option>
+                        {transporters.map((transporter) => (
+                          <option key={transporter.id} value={transporter.id}>
+                            {transporter.name} • {transporter.region || 'No region'} • {formatRating(transporter.rating)} ★
+                          </option>
+                        ))}
+                      </select>
+                      <div className="field-hint">
+                        Select a transporter for this order. Region and rating are shown in the marketplace above.
+                      </div>
+                      {deliveryDetails.preferred_transporter_name && (
+                        <div className="selected-transporter-chip">
+                          Selected: {deliveryDetails.preferred_transporter_name}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1693,6 +1888,7 @@ function BatchList({ user }) {
             <tr>
               <th>Batch Number</th>
               <th>Farm</th>
+              <th>Region</th>
               <th>Product</th>
               <th>Quantity</th>
               <th>Unit</th>
@@ -1707,6 +1903,7 @@ function BatchList({ user }) {
               <tr key={batch.id}>
                 <td><strong>{batch.batch_number}</strong></td>
                 <td>{batch.farm_name}</td>
+                <td>{batch.region || batch.farm_location}</td>
                 <td>{batch.product_type}</td>
                 <td>{parseFloat(batch.quantity_kg).toLocaleString()}</td>
                 <td>{batch.batch_unit || 'kg'}</td>
@@ -1727,6 +1924,7 @@ function CreateBatchForm({ onClose, onCreated }) {
   const [formData, setFormData] = useState({
     farm_name: '',
     farm_location: '',
+    region: '',
     product_type: '',
     quantity_kg: '',
     batch_unit: 'kg',
@@ -1761,6 +1959,13 @@ function CreateBatchForm({ onClose, onCreated }) {
             placeholder="Farm Location"
             value={formData.farm_location}
             onChange={(e) => setFormData({...formData, farm_location: e.target.value})}
+            required
+          />
+          <input
+            type="text"
+            placeholder="Region / Zone"
+            value={formData.region}
+            onChange={(e) => setFormData({...formData, region: e.target.value})}
             required
           />
           <input
@@ -2348,6 +2553,7 @@ function ShipmentsPage({ user }) {
   const [savingShipmentId, setSavingShipmentId] = useState(null);
   const [shipmentQueue, setShipmentQueue] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [transporterProfile, setTransporterProfile] = useState(null);
   const role = (user?.role || '').toString().trim().toLowerCase();
   const canManageShipments = ['transporter', 'admin', 'fraud_analyst'].includes(role);
   const canManageQueue = role === 'transporter' || role === 'admin';
@@ -2360,6 +2566,19 @@ function ShipmentsPage({ user }) {
       loadShipmentQueue();
     }
   }, [canManageQueue]);
+
+  useEffect(() => {
+    if (!isTransporter) return;
+
+    api.get('/transporters/marketplace', {
+      params: user?.region ? { region: user.region } : {}
+    })
+      .then((res) => {
+        const match = (res.data.transporters || []).find((item) => Number(item.id) === Number(user.id));
+        setTransporterProfile(match || null);
+      })
+      .catch(() => setTransporterProfile(null));
+  }, [isTransporter, user?.id, user?.region]);
 
 
   const loadShipments = async () => {
@@ -2481,6 +2700,25 @@ function ShipmentsPage({ user }) {
         <span className="buyer-mini-text">Role: {role || 'guest'}</span>
       </div>
 
+      {isTransporter && transporterProfile && (
+        <div className="card transporter-profile-card">
+          <div className="marketplace-header">
+            <div>
+              <h2>Transporter Profile</h2>
+              <p>Region-driven assignment with reputation built from completed deliveries.</p>
+            </div>
+            <span className="badge badge-blue">{transporterProfile.region || user.region || 'Region not set'}</span>
+          </div>
+
+          <div className="transporter-profile-grid">
+            <div><span>Rating</span><strong>{formatRating(transporterProfile.rating)} ★</strong></div>
+            <div><span>Reviews</span><strong>{transporterProfile.rating_count || 0}</strong></div>
+            <div><span>Completed</span><strong>{transporterProfile.completed_shipments || 0}</strong></div>
+            <div><span>Active</span><strong>{transporterProfile.active_shipments || 0}</strong></div>
+          </div>
+        </div>
+      )}
+
       {selectedRequest && (
         <CreateShipmentForm
           deliveryRequest={selectedRequest}
@@ -2511,6 +2749,7 @@ function ShipmentsPage({ user }) {
                     <div><span>Batch</span><strong>{req.batch_number}</strong></div>
                     <div><span>Pickup</span><strong>{req.pickup_location}</strong></div>
                     <div><span>Delivery</span><strong>{req.delivery_location}</strong></div>
+                    <div><span>Preferred Transporter</span><strong>{req.preferred_transporter_name || 'Auto assign'}</strong></div>
                     <div><span>Preferred Date</span><strong>{new Date(req.preferred_delivery_date).toLocaleDateString()}</strong></div>
                   </div>
                   <button
@@ -2805,6 +3044,7 @@ function OrdersPage({ user }) {
                 <th>Quantity</th>
                 <th>Unit</th>
                 <th>Delivery Location</th>
+                <th>Preferred Transporter</th>
                 <th>Preferred Delivery</th>
                 <th>Status</th>
                 <th>Shipment</th>
@@ -2823,6 +3063,10 @@ function OrdersPage({ user }) {
                   <td>{parseFloat(order.requested_quantity_kg).toLocaleString()}</td>
                   <td>{order.requested_unit || 'kg'}</td>
                   <td>{order.delivery_location}</td>
+                  <td>
+                    <div>{order.preferred_transporter_name || 'Auto assign'}</div>
+                    <div className="buyer-mini-text">{order.preferred_transporter_region || ''}</div>
+                  </td>
                   <td>{new Date(order.preferred_delivery_date).toLocaleDateString()}</td>
                   <td>
                     <span className={`badge badge-${
@@ -2956,6 +3200,7 @@ function CaseList({ user }) {
               <th>Case #</th>
               <th>Flag Type</th>
               <th>Batch</th>
+              <th>Region</th>
               <th>Analyst</th>
               <th>Priority</th>
               <th>Decision</th>
@@ -2969,6 +3214,7 @@ function CaseList({ user }) {
                 <td><strong>{c.case_number}</strong></td>
                 <td>{c.flag_type?.replace(/_/g, ' ')}</td>
                 <td>{c.batch_number}</td>
+                <td>{c.batch_region || 'N/A'}</td>
                 <td>{c.analyst_name}</td>
                 <td><span className="badge">{c.priority}</span></td>
                 <td>

@@ -1145,6 +1145,131 @@ body {
   border: 1px solid rgba(198,40,40,0.3);
 }
 
+.transporter-marketplace-card,
+.transporter-profile-card {
+  margin-top: 1.25rem;
+  border: 1px solid rgba(46, 125, 50, 0.14);
+  background: linear-gradient(180deg, #ffffff 0%, #f6fbf7 100%);
+}
+
+.marketplace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.marketplace-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.marketplace-header p {
+  margin-bottom: 0;
+  color: var(--gray-500);
+}
+
+.marketplace-filter-row {
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.marketplace-filter-row label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--gray-600);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.marketplace-filter-row input {
+  border: 2px solid var(--gray-200);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+}
+
+.transporter-market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
+}
+
+.transporter-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f9fcfa 100%);
+  border: 1px solid var(--gray-200);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.transporter-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.transporter-card-top h3 {
+  margin-bottom: 0.2rem;
+}
+
+.transporter-card-top p {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 0.9rem;
+}
+
+.transporter-metrics,
+.transporter-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.transporter-metrics div,
+.transporter-profile-grid div {
+  background: var(--gray-50);
+  border-radius: 10px;
+  padding: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.transporter-metrics span,
+.transporter-profile-grid span {
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+}
+
+.transporter-metrics strong,
+.transporter-profile-grid strong {
+  font-size: 1rem;
+}
+
+.selected-transporter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(46, 125, 50, 0.1);
+  color: var(--primary-dark);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .buyer-verify-header {
   display: flex;
   align-items: center;
@@ -1930,8 +2055,21 @@ body {
     flex-direction: column;
   }
 
+  .marketplace-header {
+    flex-direction: column;
+  }
+
+  .marketplace-filter-row {
+    width: 100%;
+  }
+
   .shipment-card-meta,
   .shipment-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transporter-metrics,
+  .transporter-profile-grid {
     grid-template-columns: 1fr;
   }
 }

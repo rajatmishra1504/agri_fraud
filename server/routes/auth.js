@@ -20,7 +20,12 @@ router.post('/register',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { email, password, name, role, organization, phone } = req.body;
+      const { email, password, name, role, organization, phone, region } = req.body;
+      const normalizedRegion = String(region || organization || '').trim() || null;
+
+      if (['inspector', 'transporter', 'fraud_analyst'].includes(role) && !normalizedRegion) {
+        return res.status(400).json({ error: 'region is required for inspector, transporter, and fraud analyst roles' });
+      }
 
       // Check if user exists
       const existingUser = await pool.query(
@@ -37,10 +42,10 @@ router.post('/register',
 
       // Create user
       const result = await pool.query(
-        `INSERT INTO users (email, password_hash, name, role, organization, phone)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, email, name, role, organization, created_at`,
-        [email, passwordHash, name, role, organization, phone]
+        `INSERT INTO users (email, password_hash, name, role, organization, phone, region)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, email, name, role, organization, region, created_at`,
+        [email, passwordHash, name, role, organization, phone, normalizedRegion]
       );
 
       const user = result.rows[0];
@@ -81,7 +86,7 @@ router.post('/login',
 
       // Get user
       const result = await pool.query(
-        `SELECT id, email, password_hash, name, role, organization, is_active
+        `SELECT id, email, password_hash, name, role, organization, region, is_active
          FROM users WHERE email = $1`,
         [email]
       );
@@ -137,7 +142,7 @@ router.get('/me', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     const result = await pool.query(
-      `SELECT id, email, name, role, organization, phone, created_at
+      `SELECT id, email, name, role, organization, region, phone, created_at
        FROM users WHERE id = $1 AND is_active = true`,
       [decoded.userId]
     );

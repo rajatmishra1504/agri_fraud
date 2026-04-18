@@ -12,6 +12,40 @@ router.post('/',
     try {
       const { flag_id, priority, notes } = req.body;
       const caseNumber = `CASE-${Date.now().toString().slice(-8)}`;
+
+      const flagResult = await pool.query(
+        `SELECT ff.id, ff.batch_id, b.region as batch_region
+         FROM fraud_flags ff
+         LEFT JOIN batches b ON ff.batch_id = b.id
+         WHERE ff.id = $1`,
+        [flag_id]
+      );
+
+      if (flagResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Flag not found' });
+      }
+
+      const batchRegion = String(flagResult.rows[0].batch_region || '').trim();
+      let assignedAnalystId = req.user.id;
+
+      if (batchRegion) {
+        const analystResult = await pool.query(
+          `SELECT u.id
+           FROM users u
+           LEFT JOIN fraud_cases fc ON fc.assigned_to = u.id AND fc.decision = 'PENDING'
+           WHERE u.role = 'fraud_analyst'
+             AND u.is_active = true
+             AND COALESCE(LOWER(TRIM(u.region)), '') = LOWER(TRIM($1))
+           GROUP BY u.id
+           ORDER BY COUNT(fc.id) ASC, u.created_at ASC
+           LIMIT 1`,
+          [batchRegion]
+        );
+
+        if (analystResult.rows.length > 0) {
+          assignedAnalystId = analystResult.rows[0].id;
+        }
+      }
       
       const result = await pool.query(`
         INSERT INTO fraud_cases (
@@ -19,7 +53,7 @@ router.post('/',
         )
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *
-      `, [flag_id, caseNumber, req.user.id, priority, notes]);
+      `, [flag_id, caseNumber, assignedAnalystId, priority, notes]);
       
       await pool.query(
         `UPDATE fraud_flags SET status = 'INVESTIGATING' WHERE id = $1`,
@@ -79,7 +113,7 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT fc.*, ff.flag_type, ff.severity, ff.description,
-             b.batch_number, u.name as analyst_name
+            b.batch_number, b.region as batch_region, u.name as analyst_name, u.region as analyst_region
       FROM fraud_cases fc
       LEFT JOIN fraud_flags ff ON fc.flag_id = ff.id
       LEFT JOIN batches b ON ff.batch_id = b.id

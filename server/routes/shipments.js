@@ -12,18 +12,32 @@ router.get('/queue',
   authorizeRoles('transporter', 'admin'),
   async (req, res) => {
     try {
+      const params = [];
+      const transporterFilter = req.user.role === 'transporter'
+        ? (() => {
+            params.push(req.user.id);
+            return `AND (po.preferred_transporter_id IS NULL OR po.preferred_transporter_id = $${params.length})`;
+          })()
+        : '';
+
       const result = await pool.query(
         `SELECT po.id as order_id, po.order_number, po.batch_id,
                 po.requested_quantity_kg, po.delivery_location, po.preferred_delivery_date,
                 po.delivery_contact_name, po.delivery_contact_phone, po.delivery_instructions,
                 b.batch_number, b.product_type, b.farm_name, b.farm_location as pickup_location,
-                buyer.name as buyer_name
+                buyer.name as buyer_name,
+                pt.name as preferred_transporter_name,
+                pt.region as preferred_transporter_region,
+                po.preferred_transporter_id
          FROM purchase_orders po
          JOIN batches b ON po.batch_id = b.id
          LEFT JOIN users buyer ON po.buyer_id = buyer.id
+         LEFT JOIN users pt ON po.preferred_transporter_id = pt.id
          LEFT JOIN shipments s ON s.order_id = po.id
          WHERE po.status = 'APPROVED' AND s.id IS NULL
-         ORDER BY po.reviewed_at DESC NULLS LAST, po.created_at DESC`
+           ${transporterFilter}
+         ORDER BY po.reviewed_at DESC NULLS LAST, po.created_at DESC`,
+        params
       );
 
       res.json({
@@ -75,6 +89,7 @@ router.post('/',
       let finalWeight = weight_kg;
       let finalExpectedDeliveryDate = expected_delivery_date || null;
       let finalCurrentLocation = current_location || null;
+      let finalTransporterId = req.user.id;
 
       if (order_id) {
         const orderResult = await client.query(
@@ -113,6 +128,15 @@ router.post('/',
         finalWeight = finalWeight || order.requested_quantity_kg || order.quantity_kg;
         finalExpectedDeliveryDate = finalExpectedDeliveryDate || order.preferred_delivery_date;
         finalCurrentLocation = finalCurrentLocation || order.farm_location;
+
+        if (order.preferred_transporter_id) {
+          if (req.user.role === 'transporter' && Number(order.preferred_transporter_id) !== Number(req.user.id)) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'This shipment is reserved for a different transporter' });
+          }
+
+          finalTransporterId = order.preferred_transporter_id;
+        }
       }
 
       if (!finalBatchId || !finalFromLocation || !finalToLocation || !finalWeight) {
@@ -147,7 +171,7 @@ router.post('/',
           finalToLocation,
           distance_km || null,
           finalWeight,
-          req.user.id,
+          finalTransporterId,
           vehicle_number || null,
           from_lat || null,
           from_lng || null,
@@ -422,7 +446,7 @@ router.get('/',
       const whereParts = [];
 
       if (req.user.role === 'transporter') {
-        whereParts.push(`(s.status IN ('PENDING', 'IN_TRANSIT') OR s.transporter_id = $${params.length + 1})`);
+        whereParts.push(`(s.status IN ('PENDING', 'IN_TRANSIT') OR s.transporter_id = $${params.length + 1} OR po.preferred_transporter_id = $${params.length + 1})`);
         params.push(req.user.id);
       }
 
@@ -436,12 +460,17 @@ router.get('/',
       const result = await pool.query(
         `SELECT s.*, b.batch_number, b.product_type, b.farm_location as pickup_location,
                 u.name as transporter_name,
+                u.region as transporter_region,
                 po.order_number, po.delivery_location, po.preferred_delivery_date,
-                po.delivery_contact_name, po.delivery_contact_phone
+            po.delivery_contact_name, po.delivery_contact_phone,
+            po.preferred_transporter_id,
+            pt.name as preferred_transporter_name,
+            pt.region as preferred_transporter_region
          FROM shipments s
          LEFT JOIN batches b ON s.batch_id = b.id
          LEFT JOIN users u ON s.transporter_id = u.id
          LEFT JOIN purchase_orders po ON s.order_id = po.id
+          LEFT JOIN users pt ON po.preferred_transporter_id = pt.id
          ${whereClause}
          ORDER BY s.created_at DESC
          LIMIT 200`,
@@ -475,7 +504,7 @@ router.post('/:id/status',
       await client.query('BEGIN');
 
       const shipmentResult = await client.query(
-        'SELECT id, transporter_id FROM shipments WHERE id = $1 FOR UPDATE',
+        'SELECT id, transporter_id, order_id, status FROM shipments WHERE id = $1 FOR UPDATE',
         [id]
       );
 

@@ -4,7 +4,7 @@ services:
     env: node
     plan: free
     buildCommand: "npm install && cd client && npm install && npm run build"
-    startCommand: "npm run migrate && npm start"
+    startCommand: "npm run migrate:bootstrap && npm start"
     envVars:
       - key: NODE_ENV
         value: production

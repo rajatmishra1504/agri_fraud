@@ -297,7 +297,7 @@ FROM fraud_flags
 GROUP BY flag_type, severity;
 `;
 
-async function migrate() {
+async function migrate(skipPoolEnd = false) {
   const client = await pool.connect();
   try {
     console.log('🚀 Starting database migration...');
@@ -318,7 +318,9 @@ async function migrate() {
     throw error;
   } finally {
     client.release();
-    await pool.end();
+        if (!skipPoolEnd) {
+            await pool.end();
+        }
   }
 }
 
