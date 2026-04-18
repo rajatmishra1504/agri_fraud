@@ -47,15 +47,16 @@ const getApiDocsHtml = (baseUrl) => `
             width: 300px;
             background-color: var(--sidebar-bg);
             color: var(--sidebar-text);
-            padding: 2rem 1.5rem;
+            padding: 2rem 1.25rem;
             position: fixed;
             height: 100vh;
             overflow-y: auto;
             border-right: 1px solid var(--border);
+            z-index: 100;
         }
 
         .sidebar h2 {
-            font-size: 1.25rem;
+            font-size: 1.1rem;
             margin-bottom: 2rem;
             display: flex;
             align-items: center;
@@ -64,11 +65,11 @@ const getApiDocsHtml = (baseUrl) => `
         }
 
         .sidebar-nav h3 {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            margin: 1.5rem 0 0.75rem 0;
+            letter-spacing: 0.1em;
+            color: #94a3b8;
+            margin: 1.5rem 0 0.5rem 0;
         }
 
         .sidebar-nav ul {
@@ -78,24 +79,28 @@ const getApiDocsHtml = (baseUrl) => `
         .sidebar-nav a {
             color: var(--sidebar-text);
             text-decoration: none;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             display: block;
-            padding: 0.5rem 0;
-            transition: color 0.2s;
-            opacity: 0.8;
+            padding: 0.4rem 0;
+            transition: all 0.2s;
+            opacity: 0.7;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .sidebar-nav a:hover {
             color: var(--primary);
             opacity: 1;
+            padding-left: 4px;
         }
 
         /* Main Content */
         .main-content {
             flex: 1;
             margin-left: 300px;
-            padding: 3rem 4rem;
-            max-width: 1000px;
+            padding: 3rem 5rem;
+            max-width: 1200px;
         }
 
         .header {
@@ -105,9 +110,9 @@ const getApiDocsHtml = (baseUrl) => `
         }
 
         .header h1 {
-            font-size: 2.5rem;
+            font-size: 2.2rem;
             font-weight: 800;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
             color: #0f172a;
         }
 
@@ -116,7 +121,21 @@ const getApiDocsHtml = (baseUrl) => `
             padding: 0.5rem 1rem;
             border-radius: 6px;
             font-family: 'Fira Code', monospace;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            display: inline-block;
+        }
+
+        /* Section dividers */
+        .doc-section {
+            margin-bottom: 5rem;
+        }
+        
+        .doc-section h2 {
+            font-size: 1.5rem;
+            color: #1e293b;
+            margin-bottom: 2rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--primary);
             display: inline-block;
         }
 
@@ -125,14 +144,14 @@ const getApiDocsHtml = (baseUrl) => `
             background: var(--card-bg);
             border-radius: 12px;
             border: 1px solid var(--border);
-            margin-bottom: 3rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
             overflow: hidden;
             scroll-margin-top: 2rem;
         }
 
         .endpoint-header {
-            padding: 1.5rem;
+            padding: 1.25rem 1.5rem;
             display: flex;
             align-items: center;
             gap: 1rem;
@@ -141,12 +160,12 @@ const getApiDocsHtml = (baseUrl) => `
         }
 
         .method {
-            padding: 0.25rem 0.75rem;
-            border-radius: 6px;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
             font-weight: 700;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: white;
-            min-width: 60px;
+            min-width: 65px;
             text-align: center;
         }
 
@@ -159,17 +178,19 @@ const getApiDocsHtml = (baseUrl) => `
         .path {
             font-family: 'Fira Code', monospace;
             font-weight: 600;
-            font-size: 1rem;
+            font-size: 0.95rem;
+            color: #334155;
         }
 
         .role-badge {
             margin-left: auto;
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             background: #f1f5f9;
-            padding: 0.2rem 0.6rem;
-            border-radius: 20px;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
             border: 1px solid var(--border);
             color: var(--text-muted);
+            font-weight: 600;
         }
 
         .endpoint-body {
@@ -177,16 +198,16 @@ const getApiDocsHtml = (baseUrl) => `
         }
 
         .endpoint-desc {
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.25rem;
             color: var(--text-muted);
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .section-title {
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             font-weight: 700;
             text-transform: uppercase;
-            color: var(--text-main);
+            color: #475569;
             margin-bottom: 0.75rem;
             display: flex;
             align-items: center;
@@ -196,37 +217,39 @@ const getApiDocsHtml = (baseUrl) => `
         pre {
             background: #1e293b;
             color: #e2e8f0;
-            padding: 1rem;
+            padding: 1.25rem;
             border-radius: 8px;
             font-family: 'Fira Code', monospace;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             overflow-x: auto;
             margin-bottom: 1.5rem;
+            border: 1px solid #334155;
         }
 
         .param-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 1.5rem;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
 
         .param-table th {
             text-align: left;
-            padding: 0.75rem;
+            padding: 0.6rem;
             background: #f8fafc;
             border-bottom: 2px solid var(--border);
+            color: #64748b;
         }
 
         .param-table td {
-            padding: 0.75rem;
+            padding: 0.6rem;
             border-bottom: 1px solid var(--border);
         }
 
         .param-name { font-weight: 600; color: var(--primary-dark); }
-        .param-type { color: var(--text-muted); font-size: 0.8rem; }
+        .param-type { color: #94a3b8; font-size: 0.75rem; }
 
-        @media (max-width: 768px) {
+        @media (max-width: 900px) {
             .sidebar { display: none; }
             .main-content { margin-left: 0; padding: 2rem; }
         }
@@ -236,171 +259,293 @@ const getApiDocsHtml = (baseUrl) => `
     <aside class="sidebar">
         <h2>🌾 Agri-Fraud API</h2>
         <nav class="sidebar-nav">
-            <h3>Authentication</h3>
+            <h3>Auth & Account</h3>
             <ul>
                 <li><a href="#register">Register</a></li>
                 <li><a href="#login">Login</a></li>
+                <li><a href="#profile">Get Profile</a></li>
             </ul>
             
-            <h3>Batches & Inventory</h3>
+            <h3>Inventory</h3>
             <ul>
                 <li><a href="#list-batches">List Batches</a></li>
+                <li><a href="#get-batch">Batch Details</a></li>
                 <li><a href="#create-batch">Create Batch</a></li>
             </ul>
 
             <h3>Certificates</h3>
             <ul>
-                <li><a href="#issue-cert">Issue Certificate</a></li>
-                <li><a href="#verify-cert">Verify (Public)</a></li>
+                <li><a href="#list-certs">List Certs</a></li>
+                <li><a href="#issue-cert">Issue Cert</a></li>
+                <li><a href="#revoke-cert">Revoke Cert</a></li>
+                <li><a href="#verify-cert">Public Verify</a></li>
             </ul>
 
-            <h3>Supply Chain</h3>
+            <h3>Marketplace</h3>
+            <ul>
+                <li><a href="#list-orders">List Orders</a></li>
+                <li><a href="#create-order">Create Request</a></li>
+                <li><a href="#order-review">Order Review</a></li>
+                <li><a href="#transporters">Transporters</a></li>
+                <li><a href="#rate-transporter">Rate Delivery</a></li>
+            </ul>
+
+            <h3>Shipments</h3>
             <ul>
                 <li><a href="#list-shipments">List Shipments</a></li>
+                <li><a href="#shipment-queue">Shipment Queue</a></li>
+                <li><a href="#create-shipment">Create Shipment</a></li>
                 <li><a href="#update-shipment">Update Transit</a></li>
-                <li><a href="#marketplace">Transporter Mkt</a></li>
             </ul>
 
-            <h3>Fraud Intelligence</h3>
+            <h3>Intelligence</h3>
             <ul>
-                <li><a href="#fraud-stats">Dashboard Stats</a></li>
+                <li><a href="#fraud-dashboard">Fraud Stats</a></li>
                 <li><a href="#run-scan">Trigger ML Scan</a></li>
+                <li><a href="#list-cases">Manage Cases</a></li>
+                <li><a href="#audit-logs">Audit Logs</a></li>
             </ul>
         </nav>
     </aside>
 
     <main class="main-content">
         <header class="header">
-            <h1>API Reference</h1>
-            <p>Welcome to the Agriculture Fraud Detection System API. Access traceability, certificates, and fraud intelligence modules.</p>
+            <h1>API Reference Guide</h1>
+            <p>Comprehensive documentation for the Agriculture Fraud Detection Engine. Explore endpoints for traceability, automated risk scanning, and marketplace logic.</p>
             <div style="margin-top: 1.5rem;">
-                <span class="base-url">${baseUrl}</span>
+                <span class="base-url">Base API: ${baseUrl}</span>
             </div>
         </header>
 
-        <!-- REGISTER -->
-        <section id="register" class="endpoint">
-            <div class="endpoint-header">
-                <span class="method post">POST</span>
-                <span class="path">/auth/register</span>
-                <span class="role-badge">Public</span>
-            </div>
-            <div class="endpoint-body">
-                <p class="endpoint-desc">Register a new user in the system. Roles determine access permissions.</p>
-                <div class="section-title">Request Body</div>
-                <pre>{
+        <!-- AUTH SECTION -->
+        <section id="auth" class="doc-section">
+            <h2>Authentication</h2>
+            
+            <div id="register" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method post">POST</span>
+                    <span class="path">/auth/register</span>
+                    <span class="role-badge">Public</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Register a new identity. Roles: 'inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin'.</p>
+                    <pre>{
   "email": "user@agri.com",
-  "password": "password123",
-  "name": "Jane Doe",
-  "role": "inspector | transporter | buyer | fraud_analyst",
+  "password": "strongPassword",
+  "name": "Full Name",
+  "role": "buyer",
   "region": "Punjab",
-  "organization": "AgriCo"
+  "organization": "AgriTrade Ltd"
 }</pre>
+                </div>
             </div>
-        </section>
 
-        <!-- LOGIN -->
-        <section id="login" class="endpoint">
-            <div class="endpoint-header">
-                <span class="method post">POST</span>
-                <span class="path">/auth/login</span>
-                <span class="role-badge">Public</span>
-            </div>
-            <div class="endpoint-body">
-                <p class="endpoint-desc">Authenticate and receive a JWT token.</p>
-                <pre>{
+            <div id="login" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method post">POST</span>
+                    <span class="path">/auth/login</span>
+                    <span class="role-badge">Public</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Exchange credentials for a secure JWT Bearer token.</p>
+                    <pre>{
   "email": "user@agri.com",
-  "password": "password123"
+  "password": "strongPassword"
 }</pre>
+                </div>
             </div>
         </section>
 
-        <!-- CREATE BATCH -->
-        <section id="create-batch" class="endpoint">
-            <div class="endpoint-header">
-                <span class="method post">POST</span>
-                <span class="path">/batches</span>
-                <span class="role-badge">Inspector | Admin</span>
+        <!-- INVENTORY SECTION -->
+        <section id="inventory" class="doc-section">
+            <h2>Inventory & Batches</h2>
+
+            <div id="list-batches" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method get">GET</span>
+                    <span class="path">/batches</span>
+                    <span class="role-badge">Authenticated</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Retrieve agricultural batches with optional filtering by region or product.</p>
+                </div>
             </div>
-            <div class="endpoint-body">
-                <p class="endpoint-desc">Create a new agricultural batch for inspection.</p>
-                <div class="section-title">Request Body</div>
-                <pre>{
-  "farm_name": "Golden Fields",
-  "farm_location": "Amritsar, IN",
-  "product_type": "Wheat",
-  "quantity_kg": 5000,
+
+            <div id="create-batch" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method post">POST</span>
+                    <span class="path">/batches</span>
+                    <span class="role-badge">Inspector | Admin</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Onboard a new harvest into the traceability system.</p>
+                    <pre>{
+  "farm_name": "Organic Greens",
+  "farm_location": "Chandigarh",
+  "product_type": "Basmati Rice",
+  "quantity_kg": 2500,
+  "batch_unit": "kg",
+  "harvest_date": "2026-03-20",
   "quality_grade": "A+"
 }</pre>
+                </div>
             </div>
         </section>
 
-        <!-- ISSUE CERTIFICATE -->
-        <section id="issue-cert" class="endpoint">
-            <div class="endpoint-header">
-                <span class="method post">POST</span>
-                <span class="path">/certificates</span>
-                <span class="role-badge">Inspector | Admin</span>
+        <!-- CERTIFICATE SECTION -->
+        <section id="certificates" class="doc-section">
+            <h2>Certificates & QR</h2>
+
+            <div id="issue-cert" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method post">POST</span>
+                    <span class="path">/certificates</span>
+                    <span class="role-badge">Inspector | Admin</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Issue an official certification. Supports PDF upload or **Automatic PDF generation** if omitted.</p>
+                    <div class="section-title">Multipart Body</div>
+                    <table class="param-table">
+                        <tr><th>Key</th><th>Type</th><th>Optional</th></tr>
+                        <tr><td>batch_id</td><td>Number</td><td>No</td></tr>
+                        <tr><td>pdf</td><td>File (PDF)</td><td>Yes</td></tr>
+                        <tr><td>inspector_notes</td><td>String</td><td>Yes</td></tr>
+                    </table>
+                </div>
             </div>
-            <div class="endpoint-body">
-                <p class="endpoint-desc">Issue a QR-coded certificate for a batch with PDF upload support.</p>
-                <div class="section-title">Content-Type</div>
-                <p style="font-size: 0.8rem; margin-bottom: 1rem;">multipart/form-data</p>
-                <table class="param-table">
-                    <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-                    <tr><td>batch_id</td><td>Integer</td><td>ID of the batch to certify</td></tr>
-                    <tr><td>pdf</td><td>File</td><td>PDF version of the certificate</td></tr>
-                </table>
+
+            <div id="revoke-cert" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method post">POST</span>
+                    <span class="path">/certificates/:id/revoke</span>
+                    <span class="role-badge">Inspector | Admin | Analyst</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Invalidates a certificate. Verification will immediately show "Revoked" status.</p>
+                    <pre>{ "reason": "Non-compliance detected during audit" }</pre>
+                </div>
             </div>
         </section>
 
-        <!-- UPDATE SHIPMENT -->
-        <section id="update-shipment" class="endpoint">
-            <div class="endpoint-header">
-                <span class="method put">PUT</span>
-                <span class="path">/shipments/:id</span>
-                <span class="role-badge">Transporter | Admin</span>
-            </div>
-            <div class="endpoint-body">
-                <p class="endpoint-desc">Update transit details. Setting status to DELIVERED triggers automatic ML fraud evaluation.</p>
-                <pre>{
-  "status": "IN_TRANSIT | DELIVERED",
-  "current_location": "Warehouse B",
-  "weight_kg": 4980
+        <!-- MARKETPLACE SECTION -->
+        <section id="marketplace" class="doc-section">
+            <h2>Buyer Marketplace</h2>
+
+            <div id="create-order" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method post">POST</span>
+                    <span class="path">/orders</span>
+                    <span class="role-badge">Buyer</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Create a purchase request for a specific batch.</p>
+                    <pre>{
+  "batch_id": 105,
+  "requested_quantity_kg": 500,
+  "delivery_location": "Terminal 1, Port Town",
+  "preferred_transporter_id": null
 }</pre>
+                </div>
+            </div>
+
+            <div id="order-review" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method patch">PATCH</span>
+                    <span class="path">/orders/:id/review</span>
+                    <span class="role-badge">Admin | Analyst</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Approve or Reject a buyer request after checking batch availability.</p>
+                    <pre>{ "status": "APPROVED", "analyst_notes": "Verified buyer credit" }</pre>
+                </div>
             </div>
         </section>
 
-        <!-- RUN SCAN -->
-        <section id="run-scan" class="endpoint">
-            <div class="endpoint-header">
-                <span class="method post">POST</span>
-                <span class="path">/fraud/scan</span>
-                <span class="role-badge">Analyst | Admin</span>
-            </div>
-            <div class="endpoint-body">
-                <p class="endpoint-desc">Manually trigger the Machine Learning fraud detection engine to scan all shipments.</p>
-                <div class="section-title">Response</div>
-                <pre>{
-  "message": "Scan complete",
-  "flags_found": 12
+        <!-- SHIPMENT SECTION -->
+        <section id="shipments" class="doc-section">
+            <h2>Logistics & Shipments</h2>
+
+            <div id="create-shipment" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method post">POST</span>
+                    <span class="path">/shipments</span>
+                    <span class="role-badge">Transporter | Admin</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Initialize active transit for an approved order.</p>
+                    <pre>{
+  "order_id": 44,
+  "vehicle_number": "TRK-990",
+  "weight_kg": 500,
+  "expected_delivery_date": "2026-05-01"
 }</pre>
+                </div>
+            </div>
+
+            <div id="update-shipment" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method put">PUT</span>
+                    <span class="path">/shipments/:id</span>
+                    <span class="role-badge">Transporter | Admin</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Update location and weight. Setting status to 'DELIVERED' triggers automatic ML scanning.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- INTELLIGENCE SECTION -->
+        <section id="intelligence" class="doc-section">
+            <h2>Fraud Intelligence</h2>
+
+            <div id="fraud-dashboard" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method get">GET</span>
+                    <span class="path">/fraud/dashboard</span>
+                    <span class="role-badge">Admin | Analyst</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">High-level statistics on flags, open cases, and systemic anomaly scores.</p>
+                </div>
+            </div>
+
+            <div id="run-scan" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method post">POST</span>
+                    <span class="path">/fraud/scan</span>
+                    <span class="role-badge">Admin | Analyst</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Trigger the Random Forest classifier to analyze shipment patterns and flag risks.</p>
+                </div>
+            </div>
+            
+            <div id="audit-logs" class="endpoint">
+                <div class="endpoint-header">
+                    <span class="method get">GET</span>
+                    <span class="path">/audit</span>
+                    <span class="role-badge">Admin</span>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-desc">Full immutable trail of system actions (Logins, Issuance, Revocation).</p>
+                </div>
             </div>
         </section>
 
         <footer style="margin-top: 5rem; text-align: center; color: var(--text-muted); font-size: 0.8rem; padding-bottom: 3rem;">
-            &copy; 2026 Agriculture Fraud Detection System. Protected by AI monitoring.
+            &copy; 2026 Agriculture Fraud Detection System. Professional API Explorer v1.2.
         </footer>
     </main>
 
     <script>
-        // Smooth scrolling for sidebar links
         document.querySelectorAll('.sidebar-nav a').forEach(anchor => {
             anchor.addEventListener('click', function (e) {
                 e.preventDefault();
-                document.querySelector(this.getAttribute('href')).scrollIntoView({
-                    behavior: 'smooth'
-                });
+                const targetId = this.getAttribute('href');
+                const element = document.querySelector(targetId);
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth' });
+                }
             });
         });
     </script>
