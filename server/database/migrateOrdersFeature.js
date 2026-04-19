@@ -43,10 +43,16 @@ ALTER TABLE purchase_orders
 
 ALTER TABLE batches
   ADD COLUMN IF NOT EXISTS batch_unit VARCHAR(20) DEFAULT 'kg',
-  ADD COLUMN IF NOT EXISTS region VARCHAR(100);
+  ADD COLUMN IF NOT EXISTS region VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS deleted_by INTEGER REFERENCES users(id),
+  ADD COLUMN IF NOT EXISTS delete_reason TEXT;
 
 ALTER TABLE users
-  ADD COLUMN IF NOT EXISTS region VARCHAR(100);
+  ADD COLUMN IF NOT EXISTS region VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS transporter_source_state VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS transporter_destination_states TEXT[] DEFAULT ARRAY[]::TEXT[];
 
 UPDATE batches
 SET batch_unit = COALESCE(NULLIF(TRIM(batch_unit), ''), 'kg')
@@ -60,6 +66,16 @@ UPDATE users
 SET region = COALESCE(NULLIF(TRIM(region), ''), organization)
 WHERE region IS NULL OR TRIM(region) = '';
 
+UPDATE users
+SET transporter_source_state = COALESCE(NULLIF(TRIM(transporter_source_state), ''), NULLIF(TRIM(region), ''))
+WHERE role = 'transporter'
+  AND (transporter_source_state IS NULL OR TRIM(transporter_source_state) = '');
+
+UPDATE users
+SET transporter_destination_states = ARRAY_REMOVE(ARRAY[COALESCE(NULLIF(TRIM(region), ''), NULLIF(TRIM(transporter_source_state), ''))], NULL)
+WHERE role = 'transporter'
+  AND (transporter_destination_states IS NULL OR cardinality(transporter_destination_states) = 0);
+
 ALTER TABLE batches
   ALTER COLUMN batch_unit SET NOT NULL;
 
@@ -68,7 +84,10 @@ CREATE INDEX IF NOT EXISTS idx_purchase_orders_batch_id ON purchase_orders(batch
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_preferred_transporter_id ON purchase_orders(preferred_transporter_id);
 CREATE INDEX IF NOT EXISTS idx_batches_region ON batches(region);
+CREATE INDEX IF NOT EXISTS idx_batches_is_deleted ON batches(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_users_region ON users(region);
+CREATE INDEX IF NOT EXISTS idx_users_transporter_source_state ON users(transporter_source_state);
+CREATE INDEX IF NOT EXISTS idx_users_transporter_destination_states ON users USING GIN (transporter_destination_states);
 
 UPDATE purchase_orders
 SET delivery_location = COALESCE(delivery_location, 'Pending delivery location'),

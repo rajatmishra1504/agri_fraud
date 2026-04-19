@@ -20,12 +20,45 @@ router.post('/register',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { email, password, name, role, organization, phone, region } = req.body;
-      const normalizedRegion = String(region || organization || '').trim() || null;
+      const {
+        email,
+        password,
+        name,
+        role,
+        organization,
+        phone,
+        region,
+        transporter_source_state,
+        transporter_destination_states
+      } = req.body;
 
-      if (['inspector', 'transporter', 'fraud_analyst'].includes(role) && !normalizedRegion) {
-        return res.status(400).json({ error: 'region is required for inspector, transporter, and fraud analyst roles' });
+      const normalizedRegionInput = String(region || organization || '').trim() || null;
+      const normalizedTransporterSourceState = String(transporter_source_state || normalizedRegionInput || '').trim() || null;
+      const normalizedTransporterDestinationStates = Array.isArray(transporter_destination_states)
+        ? Array.from(new Set(transporter_destination_states.map((state) => String(state || '').trim()).filter(Boolean)))
+        : [];
+
+      if (['inspector', 'fraud_analyst'].includes(role) && !normalizedRegionInput) {
+        return res.status(400).json({ error: 'state is required for inspector and fraud analyst roles' });
       }
+
+      if (role === 'transporter') {
+        if (!normalizedTransporterSourceState) {
+          return res.status(400).json({ error: 'transporter_source_state is required for transporter role' });
+        }
+
+        if (normalizedTransporterDestinationStates.length === 0) {
+          return res.status(400).json({ error: 'transporter_destination_states is required for transporter role' });
+        }
+      }
+
+      const normalizedRegion = role === 'transporter'
+        ? normalizedTransporterSourceState
+        : normalizedRegionInput;
+
+      const transporterDestinationStatesForInsert = role === 'transporter'
+        ? Array.from(new Set([...normalizedTransporterDestinationStates, normalizedTransporterSourceState].filter(Boolean)))
+        : [];
 
       // Check if user exists
       const existingUser = await pool.query(
@@ -42,10 +75,30 @@ router.post('/register',
 
       // Create user
       const result = await pool.query(
-        `INSERT INTO users (email, password_hash, name, role, organization, phone, region)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, email, name, role, organization, region, created_at`,
-        [email, passwordHash, name, role, organization, phone, normalizedRegion]
+        `INSERT INTO users (
+           email,
+           password_hash,
+           name,
+           role,
+           organization,
+           phone,
+           region,
+           transporter_source_state,
+           transporter_destination_states
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id, email, name, role, organization, region, transporter_source_state, transporter_destination_states, created_at`,
+        [
+          email,
+          passwordHash,
+          name,
+          role,
+          organization,
+          phone,
+          normalizedRegion,
+          role === 'transporter' ? normalizedTransporterSourceState : null,
+          transporterDestinationStatesForInsert
+        ]
       );
 
       const user = result.rows[0];
@@ -86,7 +139,7 @@ router.post('/login',
 
       // Get user
       const result = await pool.query(
-        `SELECT id, email, password_hash, name, role, organization, region, is_active
+        `SELECT id, email, password_hash, name, role, organization, region, transporter_source_state, transporter_destination_states, is_active
          FROM users WHERE email = $1`,
         [email]
       );
@@ -142,7 +195,7 @@ router.get('/me', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     const result = await pool.query(
-      `SELECT id, email, name, role, organization, region, phone, created_at
+      `SELECT id, email, name, role, organization, region, transporter_source_state, transporter_destination_states, phone, created_at
        FROM users WHERE id = $1 AND is_active = true`,
       [decoded.userId]
     );

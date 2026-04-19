@@ -3,9 +3,22 @@ const router = express.Router();
 const pool = require('../database/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const auditLog = require('../middleware/auditLog');
+const fraudEngine = require('../services/fraudDetection');
 
 const ALLOWED_STATUSES = ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'];
 const WEIGHT_CHANGE_THRESHOLD = Number(process.env.WEIGHT_CHANGE_THRESHOLD || 15);
+
+const isPastDate = (value) => {
+  if (!value) return false;
+
+  const parsedDate = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return parsedDate < today;
+};
 
 router.get('/queue',
   authenticateToken,
@@ -139,6 +152,11 @@ router.post('/',
         }
       }
 
+      if (finalExpectedDeliveryDate && isPastDate(finalExpectedDeliveryDate)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'expected_delivery_date cannot be in the past' });
+      }
+
       if (!finalBatchId || !finalFromLocation || !finalToLocation || !finalWeight) {
         await client.query('ROLLBACK');
         return res.status(400).json({
@@ -270,6 +288,7 @@ router.put('/:id',
         }
 
         const analystNote = `FRAUDULENT ACT: ${reason}`;
+        const analystOrderReason = `Cancelled due to fraud analyst decision: ${reason}`;
 
         const cancelledResult = await client.query(
           `UPDATE shipments
@@ -283,6 +302,23 @@ router.put('/:id',
            RETURNING *`,
           [analystNote, id]
         );
+
+        if (shipment.order_id) {
+          await client.query(
+            `UPDATE purchase_orders
+             SET status = 'CANCELLED'::order_status,
+                 rejection_reason = CASE
+                   WHEN COALESCE(TRIM(rejection_reason), '') = '' THEN $2
+                   ELSE rejection_reason || ' | ' || $2
+                 END,
+                 reviewed_by = COALESCE(reviewed_by, $3),
+                 reviewed_at = COALESCE(reviewed_at, NOW()),
+                 updated_at = NOW()
+             WHERE id = $1
+               AND status <> 'CANCELLED'::order_status`,
+            [shipment.order_id, analystOrderReason, req.user.id]
+          );
+        }
 
         await client.query(
           `INSERT INTO fraud_flags (
@@ -362,25 +398,22 @@ router.put('/:id',
 
           if (deltaPct >= WEIGHT_CHANGE_THRESHOLD) {
             const severity = deltaPct >= 30 ? 'HIGH' : 'MEDIUM';
-            await client.query(
-              `INSERT INTO fraud_flags (
-                 flag_type, severity, batch_id, shipment_id, evidence_json, description
-               ) VALUES ($1, $2, $3, $4, $5, $6)`,
-              [
-                'ABNORMAL_WEIGHT_CHANGE',
-                severity,
-                shipment.batch_id,
-                shipment.id,
-                JSON.stringify({
-                  previous_weight_kg: previousWeight,
-                  updated_weight_kg: normalizedWeight,
-                  change_percent: Number(deltaPct.toFixed(2)),
-                  threshold_percent: WEIGHT_CHANGE_THRESHOLD,
-                  changed_by_user_id: req.user.id
-                }),
-                `Shipment weight changed by ${deltaPct.toFixed(2)}%, exceeding ${WEIGHT_CHANGE_THRESHOLD}% threshold.`
-              ]
-            );
+            await fraudEngine.recordShipmentAnomaly({
+              dbClient: client,
+              shipment_id: shipment.id,
+              batch_id: shipment.batch_id,
+              shipment_number: shipment.shipment_number,
+              cause_type: 'ABNORMAL_WEIGHT_CHANGE',
+              severity,
+              cause_description: `Shipment weight changed by ${deltaPct.toFixed(2)}%, exceeding ${WEIGHT_CHANGE_THRESHOLD}% threshold.`,
+              evidence_json: {
+                previous_weight_kg: previousWeight,
+                updated_weight_kg: normalizedWeight,
+                change_percent: Number(deltaPct.toFixed(2)),
+                threshold_percent: WEIGHT_CHANGE_THRESHOLD,
+                changed_by_user_id: req.user.id
+              }
+            });
           }
         }
       }
@@ -405,20 +438,17 @@ router.put('/:id',
         
         if (mlAnalysis.isAnomaly) {
             console.log('🚨 ML Engine detected an anomaly! Creating CRITICAL Fraud Flag...', mlAnalysis.features);
-            
-            await client.query(
-              `INSERT INTO fraud_flags (
-                flag_type, severity, batch_id, shipment_id, evidence_json, description
-              ) VALUES ($1, $2, $3, $4, $5, $6)`,
-              [
-                'ML_PATTERN_ANOMALY',
-                'CRITICAL',
-                finalShipmentData.batch_id,
-                finalShipmentData.id,
-                JSON.stringify(mlAnalysis.features),
-                'Machine Learning model detected suspicious multi-variate correlations in this shipment (distance vs time vs weight loss).'
-              ]
-            );
+
+            await fraudEngine.recordShipmentAnomaly({
+              dbClient: client,
+              shipment_id: finalShipmentData.id,
+              batch_id: finalShipmentData.batch_id,
+              shipment_number: finalShipmentData.shipment_number,
+              cause_type: 'ML_PATTERN_ANOMALY',
+              severity: 'CRITICAL',
+              cause_description: 'Machine Learning model detected suspicious multi-variate correlations in this shipment (distance vs time vs weight loss).',
+              evidence_json: mlAnalysis.features
+            });
         }
       }
 
@@ -446,7 +476,7 @@ router.get('/',
       const whereParts = [];
 
       if (req.user.role === 'transporter') {
-        whereParts.push(`(s.status IN ('PENDING', 'IN_TRANSIT') OR s.transporter_id = $${params.length + 1} OR po.preferred_transporter_id = $${params.length + 1})`);
+        whereParts.push(`(s.transporter_id = $${params.length + 1} OR po.preferred_transporter_id = $${params.length + 1})`);
         params.push(req.user.id);
       }
 
@@ -462,14 +492,28 @@ router.get('/',
                 u.name as transporter_name,
                 u.region as transporter_region,
                 po.order_number, po.delivery_location, po.preferred_delivery_date,
-            po.delivery_contact_name, po.delivery_contact_phone,
+          po.delivery_contact_name, po.delivery_contact_phone,
+          po.rejection_reason as order_rejection_reason,
+          po.status as order_status,
             po.preferred_transporter_id,
+            fc.decision_reason as fraud_case_reason,
+            fc.decision as fraud_case_decision,
             pt.name as preferred_transporter_name,
             pt.region as preferred_transporter_region
          FROM shipments s
          LEFT JOIN batches b ON s.batch_id = b.id
          LEFT JOIN users u ON s.transporter_id = u.id
          LEFT JOIN purchase_orders po ON s.order_id = po.id
+         LEFT JOIN LATERAL (
+           SELECT fc.decision_reason, fc.decision
+           FROM fraud_flags ff
+           JOIN fraud_cases fc ON fc.flag_id = ff.id
+           WHERE ff.shipment_id = s.id
+             AND fc.decision_reason IS NOT NULL
+             AND TRIM(fc.decision_reason) <> ''
+           ORDER BY fc.updated_at DESC, fc.created_at DESC, fc.id DESC
+           LIMIT 1
+         ) fc ON true
           LEFT JOIN users pt ON po.preferred_transporter_id = pt.id
          ${whereClause}
          ORDER BY s.created_at DESC

@@ -18,6 +18,7 @@ const isDevelopment = (process.env.NODE_ENV || 'development') === 'development';
 app.set('trust proxy', 1);
 app.use(helmet({
   contentSecurityPolicy: false, // Allow external fonts and scripts for documentation
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
@@ -89,6 +90,9 @@ app.use('/api/cases', require('./routes/cases'));
 app.use('/api/transporters', require('./routes/transporters'));
 app.use('/api/audit', require('./routes/audit'));
 app.use('/api/verify', require('./routes/verify'));
+app.use('/api/weather', require('./routes/weather'));
+app.use('/api/reviewer-images', require('./routes/reviewerImages'));
+app.use('/api/public', require('./routes/public'));
 
 // 7. PRODUCTION FRONTEND SERVING
 if (process.env.NODE_ENV === 'production') {

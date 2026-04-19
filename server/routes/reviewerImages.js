@@ -40,7 +40,7 @@ function sendFallbackAvatar(res, reviewerId) {
   const label = REVIEWER_LABELS[reviewerId] || reviewerId || 'User';
   const svg = buildFallbackAvatar(label);
   res.set('Content-Type', 'image/svg+xml; charset=utf-8');
-  res.set('Cache-Control', 'public, max-age=86400');
+  res.set('Cache-Control', 'no-store');
   return res.status(200).send(svg);
 }
 
@@ -52,28 +52,8 @@ router.get('/:reviewerId', async (req, res) => {
     return sendFallbackAvatar(res, reviewerId);
   }
 
-  try {
-    const upstream = await fetch(sourceUrl, {
-      headers: {
-        'User-Agent': 'AgriFraud-ReviewerImageProxy/1.0',
-      },
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!upstream.ok) {
-      return sendFallbackAvatar(res, reviewerId);
-    }
-
-    const contentType = upstream.headers.get('content-type') || 'image/jpeg';
-    const imageBuffer = Buffer.from(await upstream.arrayBuffer());
-
-    res.set('Content-Type', contentType);
-    res.set('Cache-Control', 'public, max-age=86400');
-    return res.send(imageBuffer);
-  } catch (error) {
-    console.error('Reviewer image proxy error:', error);
-    return sendFallbackAvatar(res, reviewerId);
-  }
+  res.set('Cache-Control', 'no-store');
+  return res.redirect(302, sourceUrl);
 });
 
 module.exports = router;

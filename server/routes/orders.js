@@ -13,6 +13,8 @@ const ORDER_STATUSES = {
 };
 
 const ORDER_DUPLICATE_WINDOW_SECONDS = parseInt(process.env.ORDER_DUPLICATE_WINDOW_SECONDS, 10) || 15;
+const QUANTITY_DECIMALS = 2;
+const QUANTITY_ROUND_FACTOR = 10 ** QUANTITY_DECIMALS;
 
 function isMissingPurchaseOrdersTable(error) {
   return error?.code === '42P01' && /purchase_orders/i.test(error?.message || '');
@@ -20,6 +22,12 @@ function isMissingPurchaseOrdersTable(error) {
 
 function normalizeUnit(unitValue) {
   return String(unitValue || '').trim().toLowerCase();
+}
+
+function normalizeQuantity(quantityValue) {
+  const numericQuantity = Number(quantityValue);
+  if (!Number.isFinite(numericQuantity)) return NaN;
+  return Math.round((numericQuantity + Number.EPSILON) * QUANTITY_ROUND_FACTOR) / QUANTITY_ROUND_FACTOR;
 }
 
 function buildOrderQuery(whereClause = '', includeWhere = false) {
@@ -88,6 +96,7 @@ router.post('/',
         `SELECT id, batch_number, product_type, quantity_kg, COALESCE(batch_unit, 'kg') as batch_unit
          FROM batches
          WHERE id = $1
+           AND COALESCE(is_deleted, false) = false
          FOR UPDATE`,
         [batch_id]
       );
@@ -111,7 +120,7 @@ router.post('/',
         return res.status(400).json({ error: 'Batch does not have a valid certificate' });
       }
 
-      const requestedQty = Number(requested_quantity_kg || batchResult.rows[0].quantity_kg);
+      const requestedQty = normalizeQuantity(requested_quantity_kg || batchResult.rows[0].quantity_kg);
       const batchUnit = normalizeUnit(batchResult.rows[0].batch_unit);
       const normalizedRequestedUnit = normalizeUnit(requested_unit || batchUnit);
 
@@ -143,11 +152,11 @@ router.post('/',
         [batch_id]
       );
 
-      const batchQuantity = Number(batchResult.rows[0].quantity_kg);
-      const allocatedQuantity = Number(allocationResult.rows[0].allocated_quantity_kg || 0);
-      const availableQuantity = Math.max(batchQuantity - allocatedQuantity, 0);
+      const batchQuantity = normalizeQuantity(batchResult.rows[0].quantity_kg);
+      const allocatedQuantity = normalizeQuantity(allocationResult.rows[0].allocated_quantity_kg || 0);
+      const availableQuantity = normalizeQuantity(Math.max(batchQuantity - allocatedQuantity, 0));
 
-      if (requestedQty > availableQuantity) {
+      if (requestedQty - availableQuantity > 1 / QUANTITY_ROUND_FACTOR) {
         await client.query('ROLLBACK');
         return res.status(409).json({
           error: `Only ${availableQuantity.toFixed(2)} kg is currently available for this batch`

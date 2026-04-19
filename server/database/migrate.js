@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS users (
     phone VARCHAR(20),
     organization VARCHAR(255),
     region VARCHAR(100),
+    transporter_source_state VARCHAR(100),
+    transporter_destination_states TEXT[] DEFAULT ARRAY[]::TEXT[],
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -57,6 +59,9 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_region ON users(region);
+CREATE INDEX IF NOT EXISTS idx_users_transporter_source_state ON users(transporter_source_state);
+CREATE INDEX IF NOT EXISTS idx_users_transporter_destination_states ON users USING GIN (transporter_destination_states);
 
 -- Batches table
 CREATE TABLE IF NOT EXISTS batches (
@@ -70,6 +75,10 @@ CREATE TABLE IF NOT EXISTS batches (
     batch_unit VARCHAR(20) NOT NULL DEFAULT 'kg',
     harvest_date DATE NOT NULL,
     quality_grade VARCHAR(10),
+    is_deleted BOOLEAN DEFAULT false,
+    deleted_at TIMESTAMP,
+    deleted_by INTEGER REFERENCES users(id),
+    delete_reason TEXT,
     created_by INTEGER REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -78,6 +87,8 @@ CREATE TABLE IF NOT EXISTS batches (
 CREATE INDEX IF NOT EXISTS idx_batches_batch_number ON batches(batch_number);
 CREATE INDEX IF NOT EXISTS idx_batches_product_type ON batches(product_type);
 CREATE INDEX IF NOT EXISTS idx_batches_created_by ON batches(created_by);
+CREATE INDEX IF NOT EXISTS idx_batches_region ON batches(region);
+CREATE INDEX IF NOT EXISTS idx_batches_is_deleted ON batches(is_deleted);
 
 -- Certificates table
 CREATE TABLE IF NOT EXISTS certificates (
