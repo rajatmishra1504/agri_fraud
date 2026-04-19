@@ -4047,8 +4047,8 @@ function AuditPage({ user }) {
                 <tr key={log.id} onClick={() => setSelectedLog(log)} style={{ cursor: 'pointer' }}>
                   <td>{new Date(log.created_at).toLocaleString()}</td>
                   <td>
-                    <div><strong>{log.user_name}</strong></div>
-                    <small className="text-muted">{log.user_email}</small>
+                    <div><strong>{log.user_name || 'System / Auto'}</strong></div>
+                    <small className="text-muted">{log.user_email || 'n/a'}</small>
                   </td>
                   <td><span className="badge bg-light text-dark border">{log.action}</span></td>
                   <td><span className="text-capitalize">{log.entity_type}</span></td>
@@ -4067,36 +4067,38 @@ function AuditPage({ user }) {
       )}
 
       {selectedLog && (
-        <div className="modal-overlay" onClick={() => setSelectedLog(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
+        <div className="audit-modal-overlay" onClick={() => setSelectedLog(null)}>
+          <div className="audit-modal-card" onClick={e => e.stopPropagation()}>
+            <div className="audit-modal-header">
               <h3>Log Details: {selectedLog.action}</h3>
-              <button className="btn-close-modal" onClick={() => setSelectedLog(null)}>×</button>
+              <button className="audit-modal-close" onClick={() => setSelectedLog(null)}>×</button>
             </div>
-            <div className="modal-body">
+            <div className="audit-modal-body text-dark">
               <div className="info-grid">
                 <div className="info-item">
                   <label>Timestamp</label>
-                  <div>{new Date(selectedLog.created_at).toLocaleString()}</div>
+                  <div className="info-value">{new Date(selectedLog.created_at).toLocaleString()}</div>
                 </div>
                 <div className="info-item">
                   <label>Actor</label>
-                  <div>{selectedLog.user_name} ({selectedLog.user_email})</div>
+                  <div className="info-value">{selectedLog.user_name || 'System'} ({selectedLog.user_email || 'n/a'})</div>
                 </div>
                 <div className="info-item">
                   <label>Entity</label>
-                  <div>{selectedLog.entity_type} #{selectedLog.entity_id}</div>
+                  <div className="info-value">{selectedLog.entity_type} #{selectedLog.entity_id}</div>
                 </div>
                 <div className="info-item">
                   <label>IP Address</label>
-                  <div>{selectedLog.ip_address || 'Unknown'}</div>
+                  <div className="info-value">{selectedLog.ip_address || 'Unknown'}</div>
                 </div>
               </div>
               <div className="mt-4">
-                <label>Modification Metadata (JSON)</label>
-                <pre className="bg-light p-3 rounded" style={{ fontSize: '12px' }}>
-                  {JSON.stringify(selectedLog.metadata, null, 2)}
-                </pre>
+                <label className="fw-bold mb-2">Modification Metadata (JSON)</label>
+                <div className="metadata-pre-wrap">
+                  <pre className="p-3 rounded border bg-light text-dark" style={{ fontSize: '13px', overflow: 'auto', maxHeight: '300px' }}>
+                    {JSON.stringify(selectedLog.metadata, null, 2)}
+                  </pre>
+                </div>
               </div>
             </div>
           </div>
