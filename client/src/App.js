@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useParams } from 'react-router-dom';
 import axios from 'axios';
-import { AlertTriangle, CheckCircle, XCircle, ShieldAlert, Package, FileText, Truck, Home, LogOut, Bell, Search, ShoppingCart, ScanLine, CloudSun, Wind, Droplets, Newspaper, Sparkles, ChevronLeft, ChevronRight, ExternalLink, X, LocateFixed, RefreshCw, ThermometerSun, Sunrise, Sunset, Mail, Twitter, Instagram } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle, ShieldAlert, Package, FileText, Truck, Home, LogOut, Bell, Search, ShoppingCart, ScanLine, CloudSun, Wind, Droplets, Newspaper, Sparkles, ChevronLeft, ChevronRight, ExternalLink, X, LocateFixed, RefreshCw, ThermometerSun, Sunrise, Sunset, Mail, Twitter, Instagram, History } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import appLogo from './assets/app-logo.svg';
@@ -226,6 +226,7 @@ function App() {
                 <Route path="/orders" element={<OrdersPage user={user} />} />
                 <Route path="/fraud" element={<FraudDashboard user={user} />} />
                 <Route path="/cases" element={<CaseList user={user} />} />
+                <Route path="/audit" element={<AuditPage user={user} />} />
                 <Route path="/verify/:qrCode" element={<VerifyCertificate />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
@@ -267,6 +268,7 @@ function Navbar({ user, logout, orderBadgeCount = 0 }) {
           <>
             <Link to="/fraud"><AlertTriangle size={18} /> Fraud Flags</Link>
             <Link to="/cases"><Search size={18} /> Cases</Link>
+            <Link to="/audit"><History size={18} /> Audit Logs</Link>
           </>
         )}
       </div>
@@ -3341,6 +3343,141 @@ function VerifyCertificate() {
           <p>{result.message}</p>
         )}
       </div>
+    </div>
+  );
+}
+
+function AuditPage({ user }) {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState({ entity_type: '', user_id: '' });
+  const [selectedLog, setSelectedLog] = useState(null);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (filter.entity_type) params.append('entity_type', filter.entity_type);
+      if (filter.user_id) params.append('user_id', filter.user_id);
+      
+      const res = await api.get(`/audit?${params.toString()}`);
+      setLogs(res.data.logs || []);
+    } catch (error) {
+      console.error('Failed to fetch logs:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  return (
+    <div className="audit-page page-container">
+      <div className="page-header">
+        <h1><History /> System Audit Logs</h1>
+        <p>Complete traceability of all system actions and data modifications.</p>
+      </div>
+
+      <div className="filter-card card mb-4">
+        <div className="card-body d-flex gap-3 align-items-center">
+          <div className="form-group mb-0">
+            <label className="mr-2">Entity Type:</label>
+            <select 
+              className="form-control d-inline-block w-auto"
+              value={filter.entity_type}
+              onChange={(e) => setFilter({ ...filter, entity_type: e.target.value })}
+            >
+              <option value="">All Entities</option>
+              <option value="batch">Batches</option>
+              <option value="certificate">Certificates</option>
+              <option value="shipment">Shipments</option>
+              <option value="order">Orders</option>
+              <option value="case">Cases</option>
+              <option value="user">Users</option>
+            </select>
+          </div>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => setFilter({ entity_type: '', user_id: '' })}>
+            Clear Filters
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="loading">Loading activity logs...</div>
+      ) : (
+        <div className="table-responsive card">
+          <table className="table table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Entity</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length > 0 ? logs.map(log => (
+                <tr key={log.id} onClick={() => setSelectedLog(log)} style={{ cursor: 'pointer' }}>
+                  <td>{new Date(log.created_at).toLocaleString()}</td>
+                  <td>
+                    <div><strong>{log.user_name}</strong></div>
+                    <small className="text-muted">{log.user_email}</small>
+                  </td>
+                  <td><span className="badge bg-light text-dark border">{log.action}</span></td>
+                  <td><span className="text-capitalize">{log.entity_type}</span></td>
+                  <td>
+                    <button className="btn btn-link btn-sm p-0">View Metadata</button>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="5" className="text-center py-4">No audit logs found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {selectedLog && (
+        <div className="modal-overlay" onClick={() => setSelectedLog(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Log Details: {selectedLog.action}</h3>
+              <button className="btn-close-modal" onClick={() => setSelectedLog(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="info-grid">
+                <div className="info-item">
+                  <label>Timestamp</label>
+                  <div>{new Date(selectedLog.created_at).toLocaleString()}</div>
+                </div>
+                <div className="info-item">
+                  <label>Actor</label>
+                  <div>{selectedLog.user_name} ({selectedLog.user_email})</div>
+                </div>
+                <div className="info-item">
+                  <label>Entity</label>
+                  <div>{selectedLog.entity_type} #{selectedLog.entity_id}</div>
+                </div>
+                <div className="info-item">
+                  <label>IP Address</label>
+                  <div>{selectedLog.ip_address || 'Unknown'}</div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <label>Modification Metadata (JSON)</label>
+                <pre className="bg-light p-3 rounded" style={{ fontSize: '12px' }}>
+                  {JSON.stringify(selectedLog.metadata, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
