@@ -19,6 +19,7 @@ A comprehensive web system for detecting and investigating fraud in agricultural
 4. **Abnormal Weight Change** (MED): Weight variance beyond acceptable thresholds
 5. **Inspector Anomaly** (LOW/MED): Suspicious inspector grading patterns
 6. **ML Anomaly Detection**: Isolation Forest for pattern anomalies
+7. **Excessive Certificates** (HIGH): More than 5 valid certificates issued for a single batch
 
 ## 🏗️ Architecture
 
