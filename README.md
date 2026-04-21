@@ -6,20 +6,21 @@ A comprehensive web system for detecting and investigating fraud in agricultural
 
 ### Core Functionality
 - **Certificate Management**: Issue and verify digital certificates with PDF upload and cryptographic hashing
-- **QR Code Verification**: Public verification page for buyers to scan and verify certificate authenticity
-- **Fraud Detection Engine**: Multi-layered detection with rule-based and ML anomaly detection
-- **Investigation Dashboard**: Comprehensive fraud analysis with evidence timelines
-- **Case Management**: Full workflow from flag detection to analyst decision
-- **Audit Logging**: Complete tracking of all system actions
+- **Permanent Cloud Storage**: Integrated with **Cloudinary** for persistent document storage across deployments
+- **QR Code Verification**: Public verification page with **Dynamic IP detection** for seamless mobile scanning
+- **Fraud Detection Engine**: Multi-layered detection with Rule-based logic and **Machine Learning (Random Forest)**
+- **Intelligent Dashboard**: Optimized performance via **In-memory caching** for real-time statistics
+- **Case Management**: Full investigative workflow from flag detection to final analyst decision
+- **Audit Logging**: Comprehensive tracking of all system entities (IP, User-Agent, and Action timestamps)
 
-### Fraud Detection Rules
-1. **Certificate Reuse** (HIGH): Same certificate hash used for multiple batches
-2. **Double Delivery** (HIGH): Same batch delivered twice to different locations
-3. **Impossible Travel** (MED/HIGH): Delivery time < minimum travel time based on distance
-4. **Abnormal Weight Change** (MED): Weight variance beyond acceptable thresholds
-5. **Inspector Anomaly** (LOW/MED): Suspicious inspector grading patterns
-6. **ML Anomaly Detection**: Isolation Forest for pattern anomalies
-7. **Excessive Certificates** (HIGH): More than 5 valid certificates issued for a single batch
+### Fraud Detection Mechanics
+1. **Certificate Reuse** (HIGH): Detects duplicate cryptographic hashes used across different batches.
+2. **Double Delivery** (HIGH): Flags if the same batch is delivered to different locations.
+3. **Impossible Travel** (MED/HIGH): Automated distance-vs-time calculation (Flags speeds > 120km/h).
+4. **Abnormal Weight Change** (MED): Detects product "skimming" during transit via weight variance.
+5. **Inspector Anomaly** (LOW/MED): Statistical detection of suspicious inspector grading patterns.
+6. **ML Anomaly Detection**: **Random Forest Classifier** trained on 1000+ data points to detect complex fraud patterns.
+7. **Excessive Certificates** (HIGH): Real-time trigger that flags batches with > 5 active certificates.
 
 ## 🏗️ Architecture
 
@@ -28,8 +29,9 @@ A comprehensive web system for detecting and investigating fraud in agricultural
 - **Database**: PostgreSQL with full ACID compliance
 - **Frontend**: React (Create React App)
 - **Authentication**: JWT tokens
-- **File Storage**: AWS S3 / Local storage
-- **Deployment**: Docker + AWS EC2 / Railway / Render
+- **File Storage**: Cloudinary (Production) / Local storage (Dev)
+- **Deployment**: Docker + Render + PostgreSQL
+- **Persistence**: Idempotent migration scripts for safe cloud redeployment
 
 ### Database Schema
 ```
@@ -175,8 +177,9 @@ npm run test:watch
 - SQL injection prevention (parameterized queries)
 - XSS protection (input sanitization)
 - CORS configuration
-- Rate limiting on API endpoints
-- Certificate hash verification (SHA-256)
+- **Rate Limiting**: Integrated `express-rate-limit` to prevent brute-force and API abuse
+- **Certificate Hash Verification**: SHA-256 integrity checks
+- **Idempotent DB**: Fail-safe migrations for persistent cloud hosting
 
 ## 📝 License
 
