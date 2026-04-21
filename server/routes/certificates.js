@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const QRCode = require('qrcode');
 const multer = require('multer');
 const path = require('path');
+const fraudDetection = require('../services/fraudDetection');
 
 // Configure multer for PDF uploads
 const fs = require('fs');
@@ -134,6 +135,17 @@ router.post('/',
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
       `, [batch_id, certNumber, certHash, pdfUrl, qrData, inspector_notes || '', req.user.id]);
+      
+      // Real-time Excessive Certificates fraud check
+      const countResult = await pool.query(
+        'SELECT COUNT(*) FROM certificates WHERE batch_id = $1 AND is_valid = true',
+        [batch_id]
+      );
+      if (parseInt(countResult.rows[0].count) > 5) {
+        console.log(`⚠️ Excessive certificates detected for Batch #${batch_id}. Triggering fraud scan...`);
+        // Trigger specific detection for this batch
+        await fraudDetection.detectExcessiveCertificates();
+      }
       
       res.status(201).json({
         message: 'Certificate issued successfully',

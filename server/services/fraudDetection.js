@@ -249,6 +249,7 @@ class FraudDetectionEngine {
     console.log('🔍 Starting fraud detection scan...');
     const results = {
       certificateReuse: await this.detectCertificateReuse(),
+      excessiveCertificates: await this.detectExcessiveCertificates(),
       doubleDelivery: await this.detectDoubleDelivery(),
       shipmentAnomalies: await this.detectShipmentAnomalies(),
       suspiciousInspector: await this.detectSuspiciousInspector()
@@ -392,6 +393,42 @@ class FraudDetectionEngine {
         });
         flagsCreated.push(flag);
       }
+    }
+    
+    return flagsCreated;
+  }
+
+  async detectExcessiveCertificates() {
+    const query = `
+      SELECT batch_id, COUNT(*) as cert_count, 
+             ARRAY_AGG(id) as cert_ids,
+             ARRAY_AGG(issued_by) as inspector_ids
+      FROM certificates
+      WHERE is_valid = true
+      GROUP BY batch_id
+      HAVING COUNT(*) > 5
+    `;
+    
+    const result = await pool.query(query);
+    const flagsCreated = [];
+    
+    for (const row of result.rows) {
+      const evidence = {
+        batch_id: row.batch_id,
+        certificate_ids: row.cert_ids,
+        inspector_ids: [...new Set(row.inspector_ids)],
+        cert_count: row.cert_count,
+        detection_time: new Date().toISOString()
+      };
+      
+      const flag = await this.createFraudFlag({
+        flag_type: 'EXCESSIVE_CERTIFICATES',
+        severity: 'HIGH',
+        batch_id: row.batch_id,
+        evidence_json: evidence,
+        description: `Batch #${row.batch_id} has ${row.cert_count} active certificates. Maximum allowed is 5.`
+      });
+      flagsCreated.push(flag);
     }
     
     return flagsCreated;
