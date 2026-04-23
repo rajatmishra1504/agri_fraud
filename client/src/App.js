@@ -598,17 +598,17 @@ function Login({ setUser }) {
       const endpoint = isRegister ? '/auth/register' : '/auth/login';
       const payload = isRegister
         ? {
-            email,
-            password,
-            ...formData,
-            transporter_source_state: formData.role === 'transporter' ? formData.transporter_source_state : undefined,
-            transporter_destination_states: formData.role === 'transporter' ? formData.transporter_destination_states : undefined,
-            region: formData.role === 'buyer'
-              ? undefined
-              : (formData.role === 'transporter' ? formData.transporter_source_state || formData.region : formData.region)
-          }
+          email,
+          password,
+          ...formData,
+          transporter_source_state: formData.role === 'transporter' ? formData.transporter_source_state : undefined,
+          transporter_destination_states: formData.role === 'transporter' ? formData.transporter_destination_states : undefined,
+          region: formData.role === 'buyer'
+            ? undefined
+            : (formData.role === 'transporter' ? formData.transporter_source_state || formData.region : formData.region)
+        }
         : { email, password };
-      
+
       const response = await api.post(endpoint, payload);
       localStorage.setItem('token', response.data.token);
       setUser(response.data.user);
@@ -658,9 +658,9 @@ function Login({ setUser }) {
                   {reviews.map((review, idx) => (
                     <article key={`${review.name}-${idx}`} className="review-item review-slide p-3">
                       <div className="d-flex gap-3 align-items-start">
-                        <img 
-                          src={review.image} 
-                          alt={`${review.name} review`} 
+                        <img
+                          src={review.image}
+                          alt={`${review.name} review`}
                           className="review-avatar"
                           onError={(event) => {
                             if (event.currentTarget.dataset.fallbackApplied === 'true') return;
@@ -743,7 +743,7 @@ function Login({ setUser }) {
                         type="text"
                         placeholder="Full Name"
                         value={formData.name}
-                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         required
                       />
 
@@ -776,7 +776,7 @@ function Login({ setUser }) {
                           <select
                             id="register-role-state"
                             value={formData.region || ''}
-                            onChange={(e) => setFormData({...formData, region: e.target.value})}
+                            onChange={(e) => setFormData({ ...formData, region: e.target.value })}
                             required
                           >
                             <option value="">Select State</option>
@@ -2106,19 +2106,32 @@ function BuyerDashboard({ user }) {
 
 function Dashboard({ user }) {
   const [stats, setStats] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-  useEffect(() => {
-    Promise.allSettled([
-      api.get('/fraud/dashboard'),
-      api.get('/batches?limit=5'),
-      api.get('/certificates?limit=5')
-    ]).then(([fraud, batches, certs]) => {
+  const loadStats = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshing(true);
+    try {
+      const [fraud, batches, certs, allBatches, allCerts] = await Promise.allSettled([
+        api.get('/fraud/dashboard'),
+        api.get('/batches?limit=5'),
+        api.get('/certificates?limit=5'),
+        api.get('/batches'),
+        api.get('/certificates'),
+      ]);
+
       const fraudData = fraud.status === 'fulfilled'
         ? fraud.value.data
         : { statistics: { open_flags: 0, high_severity: 0 }, recent_flags: [] };
       const batchData = batches.status === 'fulfilled' ? batches.value.data : { batches: [] };
       const certData = certs.status === 'fulfilled' ? certs.value.data : { certificates: [] };
-      const hasRequestError = [fraud, batches, certs].some(result => result.status === 'rejected');
+      const totalBatches = allBatches.status === 'fulfilled'
+        ? (allBatches.value.data.batches || []).length
+        : batchData.batches?.length || 0;
+      const totalCerts = allCerts.status === 'fulfilled'
+        ? (allCerts.value.data.certificates || []).length
+        : certData.certificates?.length || 0;
+      const hasRequestError = [fraud, batches, certs].some(r => r.status === 'rejected');
 
       setStats({
         fraud: {
@@ -2127,49 +2140,118 @@ function Dashboard({ user }) {
         },
         recent_batches: batchData.batches || [],
         recent_certs: certData.certificates || [],
-        error: hasRequestError ? 'Some dashboard data could not be loaded. Please refresh shortly.' : ''
+        total_batches: totalBatches,
+        total_certs: totalCerts,
+        error: hasRequestError ? 'Some data could not be loaded. Showing partial results.' : ''
       });
-    });
+      setLastUpdated(new Date());
+    } finally {
+      if (isManual) setRefreshing(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadStats();
+    const intervalId = window.setInterval(() => loadStats(), 30000);
+    return () => window.clearInterval(intervalId);
+  }, [loadStats]);
 
   if (!stats) return <div className="loading">Loading dashboard...</div>;
 
   return (
     <div className="dashboard">
-      <h1>Welcome, {user.name}</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <h1 style={{ margin: 0 }}>Welcome, {user.name}</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {lastUpdated && (
+            <span style={{ fontSize: '0.85rem', color: 'var(--gray-500)' }}>
+              Updated {formatRelativeTime(lastUpdated)}
+            </span>
+          )}
+          <button
+            className="btn-primary-small"
+            onClick={() => loadStats(true)}
+            disabled={refreshing}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <RefreshCw size={14} className={refreshing ? 'spinning' : ''} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
 
       {stats.error && <div className="error-msg">{stats.error}</div>}
-      
+
       <div className="stats-grid">
-        <StatCard
-          icon={<AlertTriangle />}
-          title="Open Fraud Flags"
-          value={stats.fraud.statistics.open_flags || 0}
-          color="red"
-        />
-        <StatCard
-          icon={<Package />}
-          title="Total Batches"
-          value={stats.recent_batches.length}
-          color="blue"
-        />
-        <StatCard
-          icon={<FileText />}
-          title="Certificates Issued"
-          value={stats.recent_certs.length}
-          color="green"
-        />
-        <StatCard
-          icon={<ShieldAlert />}
-          title="High Severity"
-          value={stats.fraud.statistics.high_severity || 0}
-          color="orange"
-        />
+        <StatCard icon={<AlertTriangle />} title="Open Fraud Flags" value={stats.fraud.statistics.open_flags || 0} color="red" />
+        <StatCard icon={<Package />} title="Total Batches" value={stats.total_batches} color="blue" />
+        <StatCard icon={<FileText />} title="Certificates Issued" value={stats.total_certs} color="green" />
+        <StatCard icon={<ShieldAlert />} title="High Severity" value={stats.fraud.statistics.high_severity || 0} color="orange" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+        {stats.recent_batches.length > 0 && (
+          <div className="card">
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              <Package size={18} /> Recent Batches
+            </h2>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Batch #</th>
+                  <th>Product</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.recent_batches.map(batch => (
+                  <tr key={batch.id}>
+                    <td><strong>{batch.batch_number}</strong></td>
+                    <td>{batch.product_type}</td>
+                    <td><span className="badge">{batch.status}</span></td>
+                    <td>{new Date(batch.created_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {stats.recent_certs.length > 0 && (
+          <div className="card">
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              <FileText size={18} /> Recent Certificates
+            </h2>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Cert #</th>
+                  <th>Product</th>
+                  <th>Grade</th>
+                  <th>Issued</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.recent_certs.map(cert => (
+                  <tr key={cert.id}>
+                    <td><strong>{cert.cert_number}</strong></td>
+                    <td>{cert.product_type}</td>
+                    <td><span className="badge badge-green">{cert.quality_grade}</span></td>
+                    <td>{new Date(cert.issued_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {stats.fraud.recent_flags.length > 0 && (
         <div className="card">
-          <h2>Recent Fraud Flags</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <AlertTriangle size={18} /> Recent Fraud Flags
+          </h2>
           <table className="table">
             <thead>
               <tr>
@@ -2192,6 +2274,13 @@ function Dashboard({ user }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {stats.fraud.recent_flags.length === 0 && stats.recent_batches.length === 0 && stats.recent_certs.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--gray-500)' }}>
+          <CheckCircle size={48} style={{ marginBottom: '1rem', color: 'var(--success)' }} />
+          <p>No recent activity to display. Data will refresh automatically every 30 seconds.</p>
         </div>
       )}
     </div>
@@ -2535,19 +2624,19 @@ function CreateBatchForm({ onClose, onCreated }) {
             type="text"
             placeholder="Farm Name"
             value={formData.farm_name}
-            onChange={(e) => setFormData({...formData, farm_name: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, farm_name: e.target.value })}
             required
           />
           <input
             type="text"
             placeholder="Farm Location"
             value={formData.farm_location}
-            onChange={(e) => setFormData({...formData, farm_location: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, farm_location: e.target.value })}
             required
           />
           <select
             value={formData.region}
-            onChange={(e) => setFormData({...formData, region: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, region: e.target.value })}
             required
           >
             <option value="">Select State</option>
@@ -2559,19 +2648,19 @@ function CreateBatchForm({ onClose, onCreated }) {
             type="text"
             placeholder="Product Type (e.g., Wheat, Rice)"
             value={formData.product_type}
-            onChange={(e) => setFormData({...formData, product_type: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, product_type: e.target.value })}
             required
           />
           <input
             type="number"
             placeholder="Quantity"
             value={formData.quantity_kg}
-            onChange={(e) => setFormData({...formData, quantity_kg: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, quantity_kg: e.target.value })}
             required
           />
           <select
             value={formData.batch_unit}
-            onChange={(e) => setFormData({...formData, batch_unit: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, batch_unit: e.target.value })}
             required
           >
             <option value="kg">kg</option>
@@ -2582,12 +2671,12 @@ function CreateBatchForm({ onClose, onCreated }) {
           <input
             type="date"
             value={formData.harvest_date}
-            onChange={(e) => setFormData({...formData, harvest_date: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, harvest_date: e.target.value })}
             required
           />
           <select
             value={formData.quality_grade}
-            onChange={(e) => setFormData({...formData, quality_grade: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, quality_grade: e.target.value })}
           >
             <option value="A+">A+ Premium</option>
             <option value="A">A</option>
@@ -2649,77 +2738,77 @@ function CertificateList({ user }) {
           </thead>
           <tbody>
             {certificates.map(cert => (
-  <tr key={cert.id}>
-    <td><strong>{cert.cert_number}</strong></td>
-    <td>{cert.batch_number}</td>
-    <td>{cert.product_type}</td>
-    <td>{cert.inspector_name}</td>
-    <td>{new Date(cert.issued_at).toLocaleDateString()}</td>
+              <tr key={cert.id}>
+                <td><strong>{cert.cert_number}</strong></td>
+                <td>{cert.batch_number}</td>
+                <td>{cert.product_type}</td>
+                <td>{cert.inspector_name}</td>
+                <td>{new Date(cert.issued_at).toLocaleDateString()}</td>
 
-    <td>
-      {cert.is_valid ? (
-        <span className="badge badge-green">Valid</span>
-      ) : (
-        <span className="badge badge-red">Revoked</span>
-      )}
-    </td>
+                <td>
+                  {cert.is_valid ? (
+                    <span className="badge badge-green">Valid</span>
+                  ) : (
+                    <span className="badge badge-red">Revoked</span>
+                  )}
+                </td>
 
-    {/* ✅ QR IMAGE FROM BACKEND */}
-    <td>
-      <a
-        href={`/verify/${cert.qr_code}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="qr-table-link"
-        title={`Open verification link: ${window.location.origin}/verify/${cert.qr_code}`}
-      >
-        <img
-          src={cert.qr_code_image}
-          alt="QR"
-          width={60}
-        />
-      </a>
-    </td>
+                {/* ✅ QR IMAGE FROM BACKEND */}
+                <td>
+                  <a
+                    href={`/verify/${cert.qr_code}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="qr-table-link"
+                    title={`Open verification link: ${window.location.origin}/verify/${cert.qr_code}`}
+                  >
+                    <img
+                      src={cert.qr_code_image}
+                      alt="QR"
+                      width={60}
+                    />
+                  </a>
+                </td>
 
-    <td>
-      <div className="cert-actions" style={{ display: 'flex', gap: '0.5rem' }}>
-        {cert.pdf_url ? (
-          <a
-            href={cert.certificate_pdf_url || getFileUrl(cert.pdf_url)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-secondary cert-view-btn"
-          >
-            View PDF
-          </a>
-        ) : (
-          <span className="buyer-mini-text">No PDF</span>
-        )}
+                <td>
+                  <div className="cert-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+                    {cert.pdf_url ? (
+                      <a
+                        href={cert.certificate_pdf_url || getFileUrl(cert.pdf_url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-secondary cert-view-btn"
+                      >
+                        View PDF
+                      </a>
+                    ) : (
+                      <span className="buyer-mini-text">No PDF</span>
+                    )}
 
-        {(user.role === 'inspector' || user.role === 'admin') && cert.is_valid && (
-          <button 
-            className="btn-secondary" 
-            style={{ color: '#ef4444', borderColor: '#ef4444' }}
-            onClick={async () => {
-              const reason = window.prompt("Enter reason for revocation:", "Safety concern");
-              if (!reason) return;
-              try {
-                await api.post(`/certificates/${cert.id}/revoke`, { reason });
-                alert("Certificate revoked successfully.");
-                const res = await api.get('/certificates');
-                setCertificates(res.data.certificates);
-              } catch (err) {
-                alert("Failed to revoke certificate.");
-              }
-            }}
-          >
-            Revoke
-          </button>
-        )}
-      </div>
-    </td>
-  </tr>
-))}
+                    {(user.role === 'inspector' || user.role === 'admin') && cert.is_valid && (
+                      <button
+                        className="btn-secondary"
+                        style={{ color: '#ef4444', borderColor: '#ef4444' }}
+                        onClick={async () => {
+                          const reason = window.prompt("Enter reason for revocation:", "Safety concern");
+                          if (!reason) return;
+                          try {
+                            await api.post(`/certificates/${cert.id}/revoke`, { reason });
+                            alert("Certificate revoked successfully.");
+                            const res = await api.get('/certificates');
+                            setCertificates(res.data.certificates);
+                          } catch (err) {
+                            alert("Failed to revoke certificate.");
+                          }
+                        }}
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -2750,7 +2839,7 @@ function CreateCertificateForm({ onClose, onCreated }) {
       const formDataToSend = new FormData();
       formDataToSend.append('batch_id', formData.batch_id);
       formDataToSend.append('inspector_notes', formData.inspector_notes);
-      
+
       if (formData.pdf) {
         formDataToSend.append('pdf', formData.pdf);
       }
@@ -2760,7 +2849,7 @@ function CreateCertificateForm({ onClose, onCreated }) {
           'Content-Type': 'multipart/form-data'
         }
       });
-      
+
       onCreated(res.data.certificate);
       alert('Certificate issued successfully! QR code generated.');
     } catch (err) {
@@ -2779,51 +2868,51 @@ function CreateCertificateForm({ onClose, onCreated }) {
         </div>
 
         <div className="cert-modal-body">
-        <form onSubmit={handleSubmit} className="form">
-          <select
-            value={formData.batch_id}
-            onChange={(e) => setFormData({...formData, batch_id: e.target.value})}
-            required
-          >
-            <option value="">Select Batch</option>
-            {batches.map(batch => (
-              <option key={batch.id} value={batch.id}>
-                {batch.batch_number} - {batch.product_type} ({formatQuantity(batch.quantity_kg, batch.batch_unit)})
-              </option>
-            ))}
-          </select>
+          <form onSubmit={handleSubmit} className="form">
+            <select
+              value={formData.batch_id}
+              onChange={(e) => setFormData({ ...formData, batch_id: e.target.value })}
+              required
+            >
+              <option value="">Select Batch</option>
+              {batches.map(batch => (
+                <option key={batch.id} value={batch.id}>
+                  {batch.batch_number} - {batch.product_type} ({formatQuantity(batch.quantity_kg, batch.batch_unit)})
+                </option>
+              ))}
+            </select>
 
-          <textarea
-            placeholder="Inspector Notes (optional)"
-            value={formData.inspector_notes}
-            onChange={(e) => setFormData({...formData, inspector_notes: e.target.value})}
-            rows="3"
-          />
-
-          <div className="cert-file-field">
-            <label>
-              Upload Certificate PDF (optional)
-            </label>
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={(e) => setFormData({...formData, pdf: e.target.files[0]})}
-              className="cert-file-input"
+            <textarea
+              placeholder="Inspector Notes (optional)"
+              value={formData.inspector_notes}
+              onChange={(e) => setFormData({ ...formData, inspector_notes: e.target.value })}
+              rows="3"
             />
-            {formData.pdf && <div className="field-hint">Selected: {formData.pdf.name}</div>}
-          </div>
 
-          {error && <div className="error-msg">{error}</div>}
+            <div className="cert-file-field">
+              <label>
+                Upload Certificate PDF (optional)
+              </label>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setFormData({ ...formData, pdf: e.target.files[0] })}
+                className="cert-file-input"
+              />
+              {formData.pdf && <div className="field-hint">Selected: {formData.pdf.name}</div>}
+            </div>
 
-          <div className="modal-actions">
-            <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Issuing...' : 'Issue Certificate'}
-            </button>
-            <button type="button" onClick={onClose} className="btn-secondary" disabled={loading}>
-              Cancel
-            </button>
-          </div>
-        </form>
+            {error && <div className="error-msg">{error}</div>}
+
+            <div className="modal-actions">
+              <button type="submit" className="btn-primary" disabled={loading}>
+                {loading ? 'Issuing...' : 'Issue Certificate'}
+              </button>
+              <button type="button" onClick={onClose} className="btn-secondary" disabled={loading}>
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -2924,7 +3013,7 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
             step="0.01"
             placeholder="Distance (km)"
             value={formData.distance_km}
-            onChange={(e) => setFormData({...formData, distance_km: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, distance_km: e.target.value })}
             required
           />
 
@@ -2934,7 +3023,7 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
             step="0.01"
             placeholder="Shipment quantity"
             value={formData.weight_kg}
-            onChange={(e) => setFormData({...formData, weight_kg: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, weight_kg: e.target.value })}
             required
           />
 
@@ -2943,7 +3032,7 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
             type="text"
             placeholder="Vehicle Number (e.g., MH01AB1234)"
             value={formData.vehicle_number}
-            onChange={(e) => setFormData({...formData, vehicle_number: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, vehicle_number: e.target.value })}
             required
           />
 
@@ -2974,7 +3063,7 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
           <label>Initial Shipment Status</label>
           <select
             value={formData.status}
-            onChange={(e) => setFormData({...formData, status: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, status: e.target.value })}
           >
             <option value="PENDING">Pending</option>
             <option value="IN_TRANSIT">In Transit</option>
@@ -3110,13 +3199,12 @@ function FraudDashboard({ user }) {
                 </td>
 
                 <td>
-                  <span className={`badge ${
-                    flag.status === 'OPEN'
+                  <span className={`badge ${flag.status === 'OPEN'
                       ? 'badge-orange'
                       : flag.status === 'INVESTIGATING'
-                      ? 'badge-blue'
-                      : 'badge-gray'
-                  }`}>
+                        ? 'badge-blue'
+                        : 'badge-gray'
+                    }`}>
                     {flag.status}
                   </span>
                 </td>
@@ -3264,20 +3352,20 @@ function ShipmentsPage({ user }) {
 
       const payload = isAnalyst
         ? {
-            status: draft.status,
-            delivery_notes: draft.delivery_notes || null,
-            fraud_reason: draft.delivery_notes || null
-          }
+          status: draft.status,
+          delivery_notes: draft.delivery_notes || null,
+          fraud_reason: draft.delivery_notes || null
+        }
         : {
-            status: draft.status,
-            current_location: draft.current_location || null,
-            delivered_to_name: draft.status === 'DELIVERED'
-              ? (draft.delivered_to_name || null)
-              : null,
-            delivery_notes: draft.delivery_notes || null,
-            expected_delivery_date: draft.expected_delivery_date || null,
-            weight_kg: draft.weight_kg || null
-          };
+          status: draft.status,
+          current_location: draft.current_location || null,
+          delivered_to_name: draft.status === 'DELIVERED'
+            ? (draft.delivered_to_name || null)
+            : null,
+          delivery_notes: draft.delivery_notes || null,
+          expected_delivery_date: draft.expected_delivery_date || null,
+          weight_kg: draft.weight_kg || null
+        };
 
       if (!isAnalyst && draft.status === 'DELIVERED') {
         payload.delivered_at = new Date().toISOString();
@@ -3675,13 +3763,12 @@ function OrdersPage({ user }) {
                     <p className="order-card-label">Order</p>
                     <h3>{order.order_number}</h3>
                   </div>
-                  <span className={`badge badge-${
-                    order.status === 'FULFILLED' ? 'green'
+                  <span className={`badge badge-${order.status === 'FULFILLED' ? 'green'
                       : order.status === 'APPROVED' ? 'blue'
-                      : order.status === 'REQUESTED' ? 'orange'
-                      : order.status === 'REJECTED' ? 'red'
-                      : 'gray'
-                  }`}>
+                        : order.status === 'REQUESTED' ? 'orange'
+                          : order.status === 'REJECTED' ? 'red'
+                            : 'gray'
+                    }`}>
                     {order.status}
                   </span>
                 </div>
@@ -3817,7 +3904,7 @@ function CaseList({ user }) {
   const handleCloseCase = async (caseId) => {
     const decision = window.prompt('Enter decision (FRAUD or NOT_FRAUD):', 'FRAUD');
     if (!decision) return;
-    
+
     const reason = window.prompt('Enter reason for this decision:');
     if (!reason) return;
 
@@ -3866,18 +3953,17 @@ function CaseList({ user }) {
                 <td>{c.analyst_name}</td>
                 <td><span className="badge">{c.priority}</span></td>
                 <td>
-                  <span className={`badge ${
-                    c.decision === 'FRAUD' ? 'badge-red' :
-                    c.decision === 'NOT_FRAUD' ? 'badge-green' : 'badge-gray'
-                  }`}>
+                  <span className={`badge ${c.decision === 'FRAUD' ? 'badge-red' :
+                      c.decision === 'NOT_FRAUD' ? 'badge-green' : 'badge-gray'
+                    }`}>
                     {c.decision}
                   </span>
                 </td>
                 <td>{new Date(c.created_at).toLocaleDateString()}</td>
                 <td>
                   {c.decision === 'PENDING' && (
-                    <button 
-                      className="btn-primary" 
+                    <button
+                      className="btn-primary"
                       onClick={() => handleCloseCase(c.id)}
                     >
                       Resolve
@@ -3983,7 +4069,7 @@ function AuditPage({ user }) {
       const params = new URLSearchParams();
       if (filter.entity_type) params.append('entity_type', filter.entity_type);
       if (filter.user_id) params.append('user_id', filter.user_id);
-      
+
       const res = await api.get(`/audit?${params.toString()}`);
       setLogs(res.data.logs || []);
     } catch (error) {
@@ -4008,7 +4094,7 @@ function AuditPage({ user }) {
         <div className="card-body d-flex gap-3 align-items-center">
           <div className="form-group mb-0">
             <label className="mr-2">Entity Type:</label>
-            <select 
+            <select
               className="form-control d-inline-block w-auto"
               value={filter.entity_type}
               onChange={(e) => setFilter({ ...filter, entity_type: e.target.value })}
