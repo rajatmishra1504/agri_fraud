@@ -400,7 +400,7 @@ function Navbar({ user, logout, orderBadgeCount = 0 }) {
         <Link to="/"><Home size={18} /> Dashboard</Link>
         <Link to="/batches"><Package size={18} /> Batches</Link>
         <Link to="/certificates"><FileText size={18} /> Certificates</Link>
-        <Link to="/shipments"><Truck size={18} /> Shipments</Link>
+        {user.role !== 'buyer' && <Link to="/shipments"><Truck size={18} /> Shipments</Link>}
         {(user.role === 'buyer' || user.role === 'fraud_analyst' || user.role === 'admin') && (
           <Link to="/orders" className="orders-nav-link">
             <ShoppingCart size={18} />
@@ -1302,9 +1302,13 @@ function BuyerDashboard({ user }) {
       api.get('/orders/my')
     ])
       .then(([certificatesRes, batchesRes, shipmentsRes, ordersRes]) => {
+        const allOrders = ordersRes.data.orders || [];
+        const buyerOrderIds = new Set(allOrders.map(o => o.id));
+        const allShipments = shipmentsRes.data.shipments || [];
+        const buyerShipments = allShipments.filter(s => s.order_id && buyerOrderIds.has(s.order_id));
         setProducts(mapProductsFromData(certificatesRes, batchesRes));
-        setShipments(shipmentsRes.data.shipments || []);
-        setOrders(ordersRes.data.orders || []);
+        setShipments(buyerShipments);
+        setOrders(allOrders);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -1559,18 +1563,6 @@ function BuyerDashboard({ user }) {
                 </button>
                 <button
                   type="button"
-                  className="btn-secondary"
-                  onClick={() => setVisibleShipmentHistoryByBatch((prev) => ({
-                    ...prev,
-                    [product.batch_id]: !prev[product.batch_id]
-                  }))}
-                >
-                  {visibleShipmentHistoryByBatch[product.batch_id]
-                    ? `Hide My Shipment History (${productShipments.length})`
-                    : `View My Shipment History (${productShipments.length})`}
-                </button>
-                <button
-                  type="button"
                   className="btn-primary"
                   disabled={buyDisabled}
                   onClick={() => {
@@ -1581,37 +1573,6 @@ function BuyerDashboard({ user }) {
                   Buy Product
                 </button>
               </div>
-
-              {visibleShipmentHistoryByBatch[product.batch_id] && (
-                <div className="buyer-product-shipments" style={{ marginTop: '1rem' }}>
-                  <h4>My Shipment History ({productShipments.length})</h4>
-                  {productShipments.length === 0 ? (
-                    <p className="buyer-empty">No shipments yet for this product batch.</p>
-                  ) : (
-                    <div className="buyer-product-shipment-list">
-                      {productShipments.slice(0, 3).map((shipment) => (
-                        <div key={shipment.id} className="buyer-product-shipment-item">
-                          <div>
-                            <strong>{shipment.shipment_number}</strong>
-                            <div className="buyer-mini-text">{shipment.from_location} to {shipment.to_location}</div>
-                          </div>
-                          <div className="buyer-product-shipment-right">
-                            <span className={`badge ${shipment.status === 'DELIVERED' ? 'badge-green' : 'badge-blue'}`}>
-                              {shipment.status}
-                            </span>
-                            <div className="buyer-mini-text">
-                              {shipment.delivered_at ? new Date(shipment.delivered_at).toLocaleDateString() : 'In transit'}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {productShipments.length > 3 && (
-                        <p className="buyer-empty">+{productShipments.length - 3} more shipments in detailed history</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Modal is rendered separately below */}
 
@@ -2106,32 +2067,19 @@ function BuyerDashboard({ user }) {
 
 function Dashboard({ user }) {
   const [stats, setStats] = useState(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(null);
 
-  const loadStats = useCallback(async (isManual = false) => {
-    if (isManual) setRefreshing(true);
-    try {
-      const [fraud, batches, certs, allBatches, allCerts] = await Promise.allSettled([
-        api.get('/fraud/dashboard'),
-        api.get('/batches?limit=5'),
-        api.get('/certificates?limit=5'),
-        api.get('/batches'),
-        api.get('/certificates'),
-      ]);
-
+  useEffect(() => {
+    Promise.allSettled([
+      api.get('/fraud/dashboard'),
+      api.get('/batches?limit=5'),
+      api.get('/certificates?limit=5')
+    ]).then(([fraud, batches, certs]) => {
       const fraudData = fraud.status === 'fulfilled'
         ? fraud.value.data
         : { statistics: { open_flags: 0, high_severity: 0 }, recent_flags: [] };
       const batchData = batches.status === 'fulfilled' ? batches.value.data : { batches: [] };
       const certData = certs.status === 'fulfilled' ? certs.value.data : { certificates: [] };
-      const totalBatches = allBatches.status === 'fulfilled'
-        ? (allBatches.value.data.batches || []).length
-        : batchData.batches?.length || 0;
-      const totalCerts = allCerts.status === 'fulfilled'
-        ? (allCerts.value.data.certificates || []).length
-        : certData.certificates?.length || 0;
-      const hasRequestError = [fraud, batches, certs].some(r => r.status === 'rejected');
+      const hasRequestError = [fraud, batches, certs].some(result => result.status === 'rejected');
 
       setStats({
         fraud: {
@@ -2140,118 +2088,49 @@ function Dashboard({ user }) {
         },
         recent_batches: batchData.batches || [],
         recent_certs: certData.certificates || [],
-        total_batches: totalBatches,
-        total_certs: totalCerts,
-        error: hasRequestError ? 'Some data could not be loaded. Showing partial results.' : ''
+        error: hasRequestError ? 'Some dashboard data could not be loaded. Please refresh shortly.' : ''
       });
-      setLastUpdated(new Date());
-    } finally {
-      if (isManual) setRefreshing(false);
-    }
+    });
   }, []);
-
-  useEffect(() => {
-    loadStats();
-    const intervalId = window.setInterval(() => loadStats(), 30000);
-    return () => window.clearInterval(intervalId);
-  }, [loadStats]);
 
   if (!stats) return <div className="loading">Loading dashboard...</div>;
 
   return (
     <div className="dashboard">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <h1 style={{ margin: 0 }}>Welcome, {user.name}</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {lastUpdated && (
-            <span style={{ fontSize: '0.85rem', color: 'var(--gray-500)' }}>
-              Updated {formatRelativeTime(lastUpdated)}
-            </span>
-          )}
-          <button
-            className="btn-primary-small"
-            onClick={() => loadStats(true)}
-            disabled={refreshing}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <RefreshCw size={14} className={refreshing ? 'spinning' : ''} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-        </div>
-      </div>
+      <h1>Welcome, {user.name}</h1>
 
       {stats.error && <div className="error-msg">{stats.error}</div>}
 
       <div className="stats-grid">
-        <StatCard icon={<AlertTriangle />} title="Open Fraud Flags" value={stats.fraud.statistics.open_flags || 0} color="red" />
-        <StatCard icon={<Package />} title="Total Batches" value={stats.total_batches} color="blue" />
-        <StatCard icon={<FileText />} title="Certificates Issued" value={stats.total_certs} color="green" />
-        <StatCard icon={<ShieldAlert />} title="High Severity" value={stats.fraud.statistics.high_severity || 0} color="orange" />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-        {stats.recent_batches.length > 0 && (
-          <div className="card">
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <Package size={18} /> Recent Batches
-            </h2>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Batch #</th>
-                  <th>Product</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.recent_batches.map(batch => (
-                  <tr key={batch.id}>
-                    <td><strong>{batch.batch_number}</strong></td>
-                    <td>{batch.product_type}</td>
-                    <td><span className="badge">{batch.status}</span></td>
-                    <td>{new Date(batch.created_at).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {stats.recent_certs.length > 0 && (
-          <div className="card">
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <FileText size={18} /> Recent Certificates
-            </h2>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Cert #</th>
-                  <th>Product</th>
-                  <th>Grade</th>
-                  <th>Issued</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.recent_certs.map(cert => (
-                  <tr key={cert.id}>
-                    <td><strong>{cert.cert_number}</strong></td>
-                    <td>{cert.product_type}</td>
-                    <td><span className="badge badge-green">{cert.quality_grade}</span></td>
-                    <td>{new Date(cert.issued_at).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <StatCard
+          icon={<AlertTriangle />}
+          title="Open Fraud Flags"
+          value={stats.fraud.statistics.open_flags || 0}
+          color="red"
+        />
+        <StatCard
+          icon={<Package />}
+          title="Total Batches"
+          value={stats.recent_batches.length}
+          color="blue"
+        />
+        <StatCard
+          icon={<FileText />}
+          title="Certificates Issued"
+          value={stats.recent_certs.length}
+          color="green"
+        />
+        <StatCard
+          icon={<ShieldAlert />}
+          title="High Severity"
+          value={stats.fraud.statistics.high_severity || 0}
+          color="orange"
+        />
       </div>
 
       {stats.fraud.recent_flags.length > 0 && (
         <div className="card">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-            <AlertTriangle size={18} /> Recent Fraud Flags
-          </h2>
+          <h2>Recent Fraud Flags</h2>
           <table className="table">
             <thead>
               <tr>
@@ -2274,13 +2153,6 @@ function Dashboard({ user }) {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {stats.fraud.recent_flags.length === 0 && stats.recent_batches.length === 0 && stats.recent_certs.length === 0 && (
-        <div className="card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--gray-500)' }}>
-          <CheckCircle size={48} style={{ marginBottom: '1rem', color: 'var(--success)' }} />
-          <p>No recent activity to display. Data will refresh automatically every 30 seconds.</p>
         </div>
       )}
     </div>
