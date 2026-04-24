@@ -23,11 +23,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
         CREATE TYPE user_role AS ENUM ('farmer', 'inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin');
     END IF;
-    -- Add farmer to existing enum if not present
-    BEGIN
-        ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'farmer';
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
+    -- Note: 'farmer' is also added outside the transaction block before this runs
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'flag_severity') THEN
         CREATE TYPE flag_severity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
     END IF;
@@ -228,14 +224,12 @@ BEGIN
         ALTER TABLE purchase_orders ADD COLUMN preferred_transporter_id INTEGER REFERENCES users(id);
     END IF;
 
-    -- 6. Performance & Data Integrity Indices
+    -- Idempotent indexes for tables already created above (shipments, certificates)
+    -- NOTE: fraud_flags and audit_logs indexes are created after those tables are defined below
     EXECUTE 'CREATE INDEX IF NOT EXISTS idx_shipments_batch_id ON shipments(batch_id)';
     EXECUTE 'CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status)';
     EXECUTE 'CREATE INDEX IF NOT EXISTS idx_certificates_qr_code ON certificates(qr_code)';
     EXECUTE 'CREATE INDEX IF NOT EXISTS idx_certificates_cert_hash ON certificates(cert_hash)';
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_fraud_flags_severity ON fraud_flags(severity)';
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_fraud_flags_batch_id ON fraud_flags(batch_id)';
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)';
 END$$;
 
 -- Add indices for new columns after they've been confirmed to exist
@@ -430,13 +424,26 @@ async function migrate(skipPoolEnd = false) {
     try {
         console.log('🚀 Starting database migration...');
 
+        // ALTER TYPE ... ADD VALUE cannot run inside a transaction in PostgreSQL.
+        // Run it first, outside any transaction block.
+        try {
+            await client.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'farmer'`);
+            console.log("✅ Enum 'farmer' value ensured in user_role.");
+        } catch (enumErr) {
+            // If user_role doesn't exist yet it will be created fresh below — safe to ignore
+            if (!enumErr.message.includes('does not exist')) {
+                console.warn('⚠️  Enum update warning (non-fatal):', enumErr.message);
+            }
+        }
+
         await client.query('BEGIN');
         await client.query(schema);
         await client.query('COMMIT');
 
         console.log('✅ Migration completed successfully!');
         console.log('📊 Database schema created with:');
-        console.log('   - Users, Batches, Certificates');
+        console.log('   - Users (farmer, inspector, transporter, buyer, fraud_analyst, admin)');
+        console.log('   - Batches, Certificates, Farmer Yields, Farm Inspections');
         console.log('   - Shipments, Fraud Flags, Fraud Cases');
         console.log('   - Audit Logs');
         console.log('   - Indexes and Views');
