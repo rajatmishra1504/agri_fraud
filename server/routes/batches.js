@@ -20,7 +20,7 @@ router.get('/', authenticateToken, async (req, res) => {
     } = req.query;
     const includeDeleted = String(include_deleted).toLowerCase() === 'true' && req.user.role === 'admin';
     const onlyDeleted = String(only_deleted).toLowerCase() === 'true' && includeDeleted;
-    
+
     let query = `
       SELECT b.*, u.name as inspector_name,
              COALESCE(b.batch_unit, 'kg') as batch_unit,
@@ -46,7 +46,7 @@ router.get('/', authenticateToken, async (req, res) => {
       LEFT JOIN certificates c ON b.id = c.batch_id
       LEFT JOIN shipments s ON b.id = s.batch_id
     `;
-    
+
     const conditions = [];
     const params = [];
 
@@ -56,44 +56,25 @@ router.get('/', authenticateToken, async (req, res) => {
       conditions.push(`COALESCE(b.is_deleted, false) = true`);
     }
 
-    if (req.user.role === 'inspector') {
-      conditions.push(`b.created_by = $${params.length + 1}`);
-      params.push(req.user.id);
-    }
-
-    if (req.user.role === 'buyer') {
-      // Only show batches with available quantity and a valid certificate
-      conditions.push(`GREATEST(
-        b.quantity_kg - COALESCE((
-          SELECT SUM(po.requested_quantity_kg)
-          FROM purchase_orders po
-          WHERE po.batch_id = b.id
-            AND po.status IN ('REQUESTED', 'APPROVED', 'FULFILLED')
-        ), 0),
-        0
-      ) > 0`);
-      conditions.push(`EXISTS (SELECT 1 FROM certificates c WHERE c.batch_id = b.id AND c.is_valid = true)`);
-    }
-    
     if (product_type) {
       conditions.push(`b.product_type = $${params.length + 1}`);
       params.push(product_type);
     }
-    
+
     if (farm_name) {
       conditions.push(`b.farm_name ILIKE $${params.length + 1}`);
       params.push(`%${farm_name}%`);
     }
-    
+
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    
+
     query += ` GROUP BY b.id, u.name ORDER BY b.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
-    
+
     const result = await pool.query(query, params);
-    
+
     res.json({
       batches: result.rows,
       count: result.rows.length
@@ -112,27 +93,20 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     const batchParams = [id];
     const deletedFilter = includeDeleted ? '' : 'AND COALESCE(b.is_deleted, false) = false';
-    const ownershipFilter = req.user.role === 'inspector'
-      ? `AND b.created_by = $${batchParams.length + 1}`
-      : '';
 
-    if (req.user.role === 'inspector') {
-      batchParams.push(req.user.id);
-    }
-    
     const batchResult = await pool.query(`
       SELECT b.*, u.name as inspector_name, u.email as inspector_email
       FROM batches b
       LEFT JOIN users u ON b.created_by = u.id
-      WHERE b.id = $1 ${deletedFilter} ${ownershipFilter}
+      WHERE b.id = $1 ${deletedFilter}
     `, batchParams);
-    
+
     if (batchResult.rows.length === 0) {
       return res.status(404).json({ error: 'Batch not found' });
     }
-    
+
     const batch = batchResult.rows[0];
-    
+
     // Get certificates
     const certsResult = await pool.query(`
       SELECT c.*, u.name as issued_by_name
@@ -140,7 +114,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
       LEFT JOIN users u ON c.issued_by = u.id
       WHERE c.batch_id = $1
     `, [id]);
-    
+
     // Get shipments
     const shipmentsResult = await pool.query(`
       SELECT s.*, u.name as transporter_name
@@ -149,14 +123,14 @@ router.get('/:id', authenticateToken, async (req, res) => {
       WHERE s.batch_id = $1
       ORDER BY s.created_at DESC
     `, [id]);
-    
+
     // Get fraud flags
     const flagsResult = await pool.query(`
       SELECT * FROM fraud_flags
       WHERE batch_id = $1
       ORDER BY created_at DESC
     `, [id]);
-    
+
     res.json({
       ...batch,
       certificates: certsResult.rows,
@@ -169,10 +143,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Create batch
+// Create batch — ADMIN only (batches are auto-created when inspector verifies a farmer yield)
 router.post('/',
   authenticateToken,
-  authorizeRoles('inspector', 'admin'),
+  authorizeRoles('admin'),
   auditLog('CREATE_BATCH', 'batch'),
   async (req, res) => {
     try {
@@ -193,10 +167,10 @@ router.post('/',
       if (!normalizedUnit) {
         return res.status(400).json({ error: 'batch_unit is required' });
       }
-      
+
       // Generate batch number
       const batchNumber = `BATCH-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
-      
+
       const result = await pool.query(`
         INSERT INTO batches (
           batch_number, farm_name, farm_location, region, product_type,
@@ -216,7 +190,7 @@ router.post('/',
         quality_grade,
         req.user.id
       ]);
-      
+
       res.status(201).json({
         message: 'Batch created successfully',
         batch: result.rows[0]
@@ -230,7 +204,7 @@ router.post('/',
 
 router.delete('/:id',
   authenticateToken,
-  authorizeRoles('inspector', 'admin'),
+  authorizeRoles('admin'),
   auditLog('DELETE_BATCH', 'batch'),
   async (req, res) => {
     const client = await pool.connect();

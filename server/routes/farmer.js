@@ -191,11 +191,13 @@ router.get('/pending-yields',
 );
 
 // Inspector: Submit inspection result for a farmer yield
+// This also auto-creates a batch in the batches table so the yield enters the supply chain
 router.post('/yield/:id/inspect',
   authenticateToken,
   authorizeRoles('inspector', 'admin'),
   auditLog('INSPECTOR_INSPECT_YIELD', 'farm_inspection'),
   async (req, res) => {
+    const client = await pool.connect();
     try {
       const { id } = req.params;
       const {
@@ -214,7 +216,7 @@ router.post('/yield/:id/inspect',
       }
 
       // Verify yield exists
-      const yieldResult = await pool.query(
+      const yieldResult = await client.query(
         `SELECT * FROM farmer_yields WHERE id = $1`,
         [id]
       );
@@ -226,16 +228,19 @@ router.post('/yield/:id/inspect',
       const yieldData = yieldResult.rows[0];
       const totalPrice = Number(price_per_unit) * Number(yieldData.quantity_kg);
       const certNumber = `CERT-${yieldData.batch_number}-${Date.now().toString().slice(-4)}`;
+      const gradeUpper = String(quality_grade).toUpperCase();
 
-      // Upsert inspection (in case re-inspection is needed)
-      const existingInspection = await pool.query(
+      await client.query('BEGIN');
+
+      // Upsert inspection
+      const existingInspection = await client.query(
         `SELECT id FROM farm_inspections WHERE yield_id = $1`,
         [id]
       );
 
       let inspectionResult;
       if (existingInspection.rows.length > 0) {
-        inspectionResult = await pool.query(`
+        inspectionResult = await client.query(`
           UPDATE farm_inspections
           SET quality_grade = $1, price_per_unit = $2, total_price = $3,
               inspection_notes = $4, certificate_number = $5,
@@ -243,16 +248,12 @@ router.post('/yield/:id/inspect',
           WHERE yield_id = $7
           RETURNING *
         `, [
-          String(quality_grade).toUpperCase(),
-          price_per_unit,
-          totalPrice,
-          inspection_notes || null,
-          certNumber,
-          req.user.id,
-          id
+          gradeUpper, price_per_unit, totalPrice,
+          inspection_notes || null, certNumber,
+          req.user.id, id
         ]);
       } else {
-        inspectionResult = await pool.query(`
+        inspectionResult = await client.query(`
           INSERT INTO farm_inspections (
             yield_id, inspector_id, quality_grade, price_per_unit,
             total_price, inspection_notes, certificate_number, status
@@ -260,29 +261,72 @@ router.post('/yield/:id/inspect',
           VALUES ($1, $2, $3, $4, $5, $6, $7, 'COMPLETED')
           RETURNING *
         `, [
-          id,
-          req.user.id,
-          String(quality_grade).toUpperCase(),
-          price_per_unit,
-          totalPrice,
-          inspection_notes || null,
-          certNumber
+          id, req.user.id, gradeUpper, price_per_unit,
+          totalPrice, inspection_notes || null, certNumber
         ]);
       }
 
-      // Mark yield as inspected
-      await pool.query(
-        `UPDATE farmer_yields SET status = 'INSPECTED', updated_at = NOW() WHERE id = $1`,
-        [id]
+      // Auto-create or update a batch in the batches table from this farmer yield
+      // batch_number mirrors the farmer yield batch_number for full traceability
+      const existingBatch = await client.query(
+        `SELECT id FROM batches WHERE batch_number = $1`,
+        [yieldData.batch_number]
       );
 
+      let batchId;
+      if (existingBatch.rows.length > 0) {
+        // Re-inspection: update the existing batch with new grade
+        const updatedBatch = await client.query(`
+          UPDATE batches
+          SET quality_grade = $1, updated_at = NOW()
+          WHERE batch_number = $2
+          RETURNING id
+        `, [gradeUpper, yieldData.batch_number]);
+        batchId = updatedBatch.rows[0].id;
+      } else {
+        // First inspection: create the batch from farmer yield data
+        const newBatch = await client.query(`
+          INSERT INTO batches (
+            batch_number, farm_name, farm_location, region,
+            product_type, quantity_kg, batch_unit,
+            harvest_date, quality_grade, created_by
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          RETURNING id
+        `, [
+          yieldData.batch_number,
+          yieldData.crop_name,
+          yieldData.farm_location,
+          yieldData.region,
+          yieldData.crop_name,
+          yieldData.quantity_kg,
+          yieldData.batch_unit,
+          yieldData.harvest_date,
+          gradeUpper,
+          req.user.id
+        ]);
+        batchId = newBatch.rows[0].id;
+      }
+
+      // Link the batch_id back to the farmer yield for full traceability
+      await client.query(
+        `UPDATE farmer_yields SET status = 'INSPECTED', batch_id = $1, updated_at = NOW() WHERE id = $2`,
+        [batchId, id]
+      );
+
+      await client.query('COMMIT');
+
       res.status(201).json({
-        message: 'Inspection completed successfully',
-        inspection: inspectionResult.rows[0]
+        message: 'Inspection completed and batch created successfully',
+        inspection: inspectionResult.rows[0],
+        batch_id: batchId
       });
     } catch (error) {
+      await client.query('ROLLBACK');
       console.error('Inspector inspect yield error:', error);
       res.status(500).json({ error: 'Failed to submit inspection' });
+    } finally {
+      client.release();
     }
   }
 );

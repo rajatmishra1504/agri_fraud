@@ -224,6 +224,11 @@ BEGIN
         ALTER TABLE purchase_orders ADD COLUMN preferred_transporter_id INTEGER REFERENCES users(id);
     END IF;
 
+    -- Farmer Yields: add batch_id for traceability to batches table
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='farmer_yields' AND column_name='batch_id') THEN
+        ALTER TABLE farmer_yields ADD COLUMN batch_id INTEGER REFERENCES batches(id) ON DELETE SET NULL;
+    END IF;
+
     -- Idempotent indexes for tables already created above (shipments, certificates)
     -- NOTE: fraud_flags and audit_logs indexes are created after those tables are defined below
     EXECUTE 'CREATE INDEX IF NOT EXISTS idx_shipments_batch_id ON shipments(batch_id)';
@@ -243,6 +248,7 @@ CREATE TABLE IF NOT EXISTS farmer_yields (
     id SERIAL PRIMARY KEY,
     batch_number VARCHAR(50) UNIQUE NOT NULL,
     farmer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    batch_id INTEGER REFERENCES batches(id) ON DELETE SET NULL,
     crop_name VARCHAR(150) NOT NULL,
     farm_location VARCHAR(255) NOT NULL,
     region VARCHAR(100),

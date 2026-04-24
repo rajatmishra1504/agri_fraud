@@ -611,8 +611,8 @@ function Login({ setUser }) {
           ...formData,
           transporter_source_state: formData.role === 'transporter' ? formData.transporter_source_state : undefined,
           transporter_destination_states: formData.role === 'transporter' ? formData.transporter_destination_states : undefined,
-          region: formData.role === 'buyer'
-            ? undefined
+          region: (formData.role === 'buyer' || formData.role === 'farmer')
+            ? (formData.region || undefined)
             : (formData.role === 'transporter' ? formData.transporter_source_state || formData.region : formData.region)
         }
         : { email, password };
@@ -779,7 +779,7 @@ function Login({ setUser }) {
                         <option value="admin">Admin</option>
                       </select>
 
-                      {formData.role !== 'buyer' && formData.role !== 'transporter' && (
+                      {formData.role !== 'buyer' && formData.role !== 'transporter' && formData.role !== 'farmer' && (
                         <>
                           <label className="login-field-label" htmlFor="register-role-state">State</label>
                           <select
@@ -787,6 +787,22 @@ function Login({ setUser }) {
                             value={formData.region || ''}
                             onChange={(e) => setFormData({ ...formData, region: e.target.value })}
                             required
+                          >
+                            <option value="">Select State</option>
+                            {INDIAN_STATES.map((state) => (
+                              <option key={state} value={state}>{state}</option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+
+                      {formData.role === 'farmer' && (
+                        <>
+                          <label className="login-field-label" htmlFor="register-farmer-state">State (optional)</label>
+                          <select
+                            id="register-farmer-state"
+                            value={formData.region || ''}
+                            onChange={(e) => setFormData({ ...formData, region: e.target.value })}
                           >
                             <option value="">Select State</option>
                             {INDIAN_STATES.map((state) => (
@@ -2262,7 +2278,7 @@ function BatchList({ user }) {
               {showArchived ? 'Show Active Batches' : `Show Archived Batches (${archivedCount})`}
             </button>
           )}
-          {(user.role === 'inspector' || user.role === 'admin') && (
+          {user.role === 'admin' && (
             <button onClick={() => setShowCreate(true)} className="btn-primary">
               Create Batch
             </button>
@@ -2298,7 +2314,7 @@ function BatchList({ user }) {
               <th>Certificates</th>
               <th>Shipments</th>
               {showArchived && <th>Deleted At</th>}
-              {(user.role === 'inspector' || user.role === 'admin') && <th>Actions</th>}
+              {user.role === 'admin' && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -2315,9 +2331,9 @@ function BatchList({ user }) {
                 <td>{batch.certificate_count}</td>
                 <td>{batch.shipment_count}</td>
                 {showArchived && <td>{batch.deleted_at ? new Date(batch.deleted_at).toLocaleString() : '-'}</td>}
-                {(user.role === 'inspector' || user.role === 'admin') && (
+                {user.role === 'admin' && (
                   <td>
-                    {showArchived && user.role === 'admin' ? (
+                    {showArchived ? (
                       <button
                         type="button"
                         className="btn-primary-small"
@@ -2326,17 +2342,14 @@ function BatchList({ user }) {
                       >
                         {restoreState.submittingId === batch.id ? 'Restoring...' : 'Restore'}
                       </button>
-                    ) : (user.role === 'admin' || Number(batch.created_by) === Number(user.id)) ? (
+                    ) : (
                       <button
                         type="button"
                         className="btn-danger-small"
                         onClick={() => openDeleteModal(batch)}
-                        disabled={showArchived}
                       >
                         Delete
                       </button>
-                    ) : (
-                      <span className="text-muted">Not owner</span>
                     )}
                   </td>
                 )}
@@ -4317,7 +4330,7 @@ function InspectorYieldsPage({ user }) {
     setInspectSuccess('');
     try {
       await api.post(`/farmer/yield/${inspectModal.yieldItem.id}/inspect`, inspectForm);
-      setInspectSuccess('Inspection submitted successfully!');
+      setInspectSuccess('✅ Inspection submitted! Batch automatically created in the system.');
       loadYields();
       setTimeout(() => setInspectModal({ open: false, yieldItem: null }), 1500);
     } catch (err) {
