@@ -186,6 +186,18 @@ router.get('/', authenticateToken, async (req, res) => {
       params.push(batch_id);
     }
 
+    if (req.user.role === 'buyer') {
+      const buyerWhere = `c.is_valid = true AND (
+        b.quantity_kg - COALESCE((
+          SELECT SUM(po.requested_quantity_kg)
+          FROM purchase_orders po
+          WHERE po.batch_id = b.id
+            AND po.status IN ('REQUESTED', 'APPROVED', 'FULFILLED')
+        ), 0)
+      ) > 0`;
+      query += (batch_id ? ' AND ' : ' WHERE ') + buyerWhere;
+    }
+
     query += `
       ORDER BY c.issued_at DESC
       LIMIT $${params.length + 1}

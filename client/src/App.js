@@ -363,7 +363,11 @@ function App() {
             <Navbar user={user} logout={logout} orderBadgeCount={orderBadgeCount} />
             <main className="main-content">
               <Routes>
-                <Route path="/" element={user.role === 'buyer' ? <BuyerDashboard user={user} /> : <Dashboard user={user} />} />
+                <Route path="/" element={
+                  user.role === 'buyer' ? <BuyerDashboard user={user} /> :
+                    user.role === 'farmer' ? <FarmerDashboard user={user} /> :
+                      <Dashboard user={user} />
+                } />
                 <Route path="/batches" element={<BatchList user={user} />} />
                 <Route path="/certificates" element={<CertificateList user={user} />} />
                 <Route path="/shipments" element={<ShipmentsPage user={user} />} />
@@ -371,6 +375,7 @@ function App() {
                 <Route path="/fraud" element={<FraudDashboard user={user} />} />
                 <Route path="/cases" element={<CaseList user={user} />} />
                 <Route path="/audit" element={<AuditPage user={user} />} />
+                <Route path="/farmer-yields" element={<InspectorYieldsPage user={user} />} />
                 <Route path="/verify/:qrCode" element={<VerifyCertificate />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
@@ -398,15 +403,18 @@ function Navbar({ user, logout, orderBadgeCount = 0 }) {
       </div>
       <div className="nav-links">
         <Link to="/"><Home size={18} /> Dashboard</Link>
-        <Link to="/batches"><Package size={18} /> Batches</Link>
-        <Link to="/certificates"><FileText size={18} /> Certificates</Link>
-        {user.role !== 'buyer' && <Link to="/shipments"><Truck size={18} /> Shipments</Link>}
+        {user.role !== 'farmer' && user.role !== 'buyer' && <Link to="/batches"><Package size={18} /> Batches</Link>}
+        {user.role !== 'farmer' && user.role !== 'buyer' && <Link to="/certificates"><FileText size={18} /> Certificates</Link>}
+        {user.role !== 'buyer' && user.role !== 'farmer' && <Link to="/shipments"><Truck size={18} /> Shipments</Link>}
         {(user.role === 'buyer' || user.role === 'fraud_analyst' || user.role === 'admin') && (
           <Link to="/orders" className="orders-nav-link">
             <ShoppingCart size={18} />
             <span>Orders</span>
             {orderBadgeCount > 0 && <span className="orders-badge">{orderBadgeCount}</span>}
           </Link>
+        )}
+        {(user.role === 'inspector' || user.role === 'admin') && (
+          <Link to="/farmer-yields"><Package size={18} /> Farmer Yields</Link>
         )}
         {(user.role === 'fraud_analyst' || user.role === 'admin') && (
           <>
@@ -763,6 +771,7 @@ function Login({ setUser }) {
                         })}
                         required
                       >
+                        <option value="farmer">Farmer</option>
                         <option value="buyer">Buyer</option>
                         <option value="inspector">Inspector</option>
                         <option value="transporter">Transporter</option>
@@ -1455,49 +1464,6 @@ function BuyerDashboard({ user }) {
     <div className="dashboard buyer-dashboard">
       <h1>Buyer Dashboard</h1>
 
-      <div className="card buyer-verify-card">
-        <h2><ScanLine size={20} /> Verify Product QR</h2>
-        <p>Paste QR code value or complete verification URL to check certificate validity and batch trace.</p>
-        <div className="buyer-verify-actions">
-          <input
-            type="text"
-            placeholder="Paste QR code or /verify/... link"
-            value={qrInput}
-            onChange={(e) => setQrInput(e.target.value)}
-          />
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={verifying || !qrInput.trim()}
-            onClick={() => handleVerify(qrInput)}
-          >
-            {verifying ? 'Verifying...' : 'Verify'}
-          </button>
-        </div>
-
-        {verifyResult && (
-          <div className={`buyer-verify-result ${verifyResult.valid ? 'valid' : 'invalid'}`}>
-            <div className="buyer-verify-header">
-              {verifyResult.valid ? <CheckCircle size={22} /> : <XCircle size={22} />}
-              <strong>{verifyResult.valid ? 'Valid certificate' : 'Invalid certificate'}</strong>
-            </div>
-
-            {verifyResult.certificate ? (
-              <div className="buyer-trace-grid">
-                <div><span>Batch</span><strong>{verifyResult.certificate.batch_number}</strong></div>
-                <div><span>Product</span><strong>{verifyResult.certificate.product_type}</strong></div>
-                <div><span>Farm</span><strong>{verifyResult.certificate.farm_name}</strong></div>
-                <div><span>Farm Location</span><strong>{verifyResult.certificate.farm_location}</strong></div>
-                <div><span>Inspector</span><strong>{verifyResult.certificate.inspector_name}</strong></div>
-                <div><span>Issued On</span><strong>{new Date(verifyResult.certificate.issued_at).toLocaleDateString()}</strong></div>
-              </div>
-            ) : (
-              <p>{verifyResult.message}</p>
-            )}
-          </div>
-        )}
-      </div>
-
       <div className="buyer-products-grid">
         {products.map((product) => {
           const activeOrders = orders.filter(
@@ -1522,45 +1488,18 @@ function BuyerDashboard({ user }) {
 
               <p className="buyer-product-description">{product.description}</p>
 
-              <div className="buyer-product-qr">
-                <a
-                  href={`/verify/${product.qr_code}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="qr-link"
-                  title={`Open verification link: ${window.location.origin}/verify/${product.qr_code}`}
-                >
-                  <QRCodeSVG
-                    value={`${window.location.origin}/verify/${product.qr_code}`}
-                    size={120}
-                    level="M"
-                    includeMargin
-                  />
-                </a>
-                <p>Scan to verify authenticity</p>
-                <a
-                  href={`/verify/${product.qr_code}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="qr-hover-link"
-                >
-                  {window.location.origin}/verify/{product.qr_code}
-                </a>
-              </div>
-
               <div className="buyer-product-meta">
-                <div><span>Farm</span><strong>{product.farm_name}</strong></div>
-                <div><span>Pickup State</span><strong>{product.region || product.farm_location || 'N/A'}</strong></div>
+                <div><span>Batch</span><strong>{product.batch_number}</strong></div>
+                <div><span>Product</span><strong>{product.product_type}</strong></div>
+                <div><span>Quality Grade</span><strong><span className="badge badge-green">{product.quality_grade || 'N/A'}</span></strong></div>
                 <div><span>Total Quantity</span><strong>{formatQuantity(product.quantity_kg, product.batch_unit)}</strong></div>
-                <div><span>Available Now</span><strong>{formatQuantity(product.available_quantity_kg, product.batch_unit)}</strong></div>
-                <div><span>Grade</span><strong>{product.quality_grade}</strong></div>
-                <div><span>Inspector</span><strong>{product.inspector_name}</strong></div>
+                <div><span>Available</span><strong>{formatQuantity(product.available_quantity_kg, product.batch_unit)}</strong></div>
+                <div><span>Price/Unit</span><strong>{product.price_per_unit ? `₹${Number(product.price_per_unit).toLocaleString()} / ${product.batch_unit}` : 'Contact seller'}</strong></div>
+                <div><span>Farm</span><strong>{product.farm_name}</strong></div>
+                <div><span>Region</span><strong>{product.region || product.farm_location || 'N/A'}</strong></div>
               </div>
 
               <div className="buyer-product-actions">
-                <button type="button" className="btn-secondary" onClick={() => handleVerify(product.qr_code)}>
-                  Verify QR
-                </button>
                 <button
                   type="button"
                   className="btn-primary"
@@ -3072,10 +3011,10 @@ function FraudDashboard({ user }) {
 
                 <td>
                   <span className={`badge ${flag.status === 'OPEN'
-                      ? 'badge-orange'
-                      : flag.status === 'INVESTIGATING'
-                        ? 'badge-blue'
-                        : 'badge-gray'
+                    ? 'badge-orange'
+                    : flag.status === 'INVESTIGATING'
+                      ? 'badge-blue'
+                      : 'badge-gray'
                     }`}>
                     {flag.status}
                   </span>
@@ -3636,10 +3575,10 @@ function OrdersPage({ user }) {
                     <h3>{order.order_number}</h3>
                   </div>
                   <span className={`badge badge-${order.status === 'FULFILLED' ? 'green'
-                      : order.status === 'APPROVED' ? 'blue'
-                        : order.status === 'REQUESTED' ? 'orange'
-                          : order.status === 'REJECTED' ? 'red'
-                            : 'gray'
+                    : order.status === 'APPROVED' ? 'blue'
+                      : order.status === 'REQUESTED' ? 'orange'
+                        : order.status === 'REJECTED' ? 'red'
+                          : 'gray'
                     }`}>
                     {order.status}
                   </span>
@@ -3826,7 +3765,7 @@ function CaseList({ user }) {
                 <td><span className="badge">{c.priority}</span></td>
                 <td>
                   <span className={`badge ${c.decision === 'FRAUD' ? 'badge-red' :
-                      c.decision === 'NOT_FRAUD' ? 'badge-green' : 'badge-gray'
+                    c.decision === 'NOT_FRAUD' ? 'badge-green' : 'badge-gray'
                     }`}>
                     {c.decision}
                   </span>
@@ -4060,6 +3999,472 @@ function AuditPage({ user }) {
               </div>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// FARMER DASHBOARD
+// ─────────────────────────────────────────────
+function FarmerDashboard({ user }) {
+  const [yields, setYields] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showSubmitForm, setShowSubmitForm] = useState(false);
+  const [submitForm, setSubmitForm] = useState({
+    crop_name: '', farm_location: '', region: '', quantity_kg: '',
+    batch_unit: 'kg', harvest_date: '', additional_notes: ''
+  });
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [submitSuccess, setSubmitSuccess] = useState('');
+  const [issueModal, setIssueModal] = useState({ open: false, yieldId: null, batchNumber: '' });
+  const [issueText, setIssueText] = useState('');
+  const [issueLoading, setIssueLoading] = useState(false);
+  const [issueError, setIssueError] = useState('');
+  const [issueSuccess, setIssueSuccess] = useState('');
+
+  const loadYields = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/farmer/my-yields');
+      setYields(res.data.yields || []);
+    } catch (err) {
+      console.error('Failed to load yields', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadYields(); }, [loadYields]);
+
+  const handleSubmitYield = async (e) => {
+    e.preventDefault();
+    setSubmitLoading(true);
+    setSubmitError('');
+    setSubmitSuccess('');
+    try {
+      await api.post('/farmer/yield', submitForm);
+      setSubmitSuccess('Yield submitted successfully! An inspector will review it shortly.');
+      setSubmitForm({ crop_name: '', farm_location: '', region: '', quantity_kg: '', batch_unit: 'kg', harvest_date: '', additional_notes: '' });
+      setShowSubmitForm(false);
+      loadYields();
+    } catch (err) {
+      setSubmitError(err.response?.data?.error || 'Failed to submit yield');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const openIssueModal = (yieldItem) => {
+    setIssueModal({ open: true, yieldId: yieldItem.id, batchNumber: yieldItem.batch_number });
+    setIssueText('');
+    setIssueError('');
+    setIssueSuccess('');
+  };
+
+  const handleRaiseIssue = async () => {
+    if (!issueText.trim() || issueText.trim().length < 10) {
+      setIssueError('Please describe the issue in at least 10 characters.');
+      return;
+    }
+    setIssueLoading(true);
+    setIssueError('');
+    setIssueSuccess('');
+    try {
+      await api.post(`/farmer/yield/${issueModal.yieldId}/raise-issue`, { issue_description: issueText });
+      setIssueSuccess('Issue raised successfully. A fraud analyst will investigate.');
+      loadYields();
+      setTimeout(() => setIssueModal({ open: false, yieldId: null, batchNumber: '' }), 1800);
+    } catch (err) {
+      setIssueError(err.response?.data?.error || 'Failed to raise issue');
+    } finally {
+      setIssueLoading(false);
+    }
+  };
+
+  const statusBadge = (status) => {
+    const map = { PENDING: 'badge-gray', INSPECTED: 'badge-green' };
+    return <span className={`badge ${map[status] || 'badge-gray'}`}>{status}</span>;
+  };
+
+  const gradeBadge = (grade) => {
+    if (!grade) return <span className="text-muted">Pending</span>;
+    const color = { A: 'badge-green', B: 'badge-green', C: 'badge-yellow', D: 'badge-orange', F: 'badge-red' };
+    return <span className={`badge ${color[grade] || 'badge-gray'}`}>{grade}</span>;
+  };
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <div>
+          <h1>🌾 Farmer Dashboard</h1>
+          <p className="text-muted">Welcome, {user.name}. Submit your crop yield and track inspection results.</p>
+        </div>
+        <button className="btn-primary" onClick={() => setShowSubmitForm(true)}>
+          + Submit New Yield
+        </button>
+      </div>
+
+      {submitSuccess && <div className="success-msg">{submitSuccess}</div>}
+
+      {/* Submit Yield Modal */}
+      {showSubmitForm && (
+        <div className="modal-overlay" onClick={() => setShowSubmitForm(false)}>
+          <div className="app-modal" onClick={e => e.stopPropagation()}>
+            <div className="cert-modal-header">
+              <h2>Submit Crop Yield</h2>
+              <button className="cert-modal-close" onClick={() => setShowSubmitForm(false)}>×</button>
+            </div>
+            <div className="cert-modal-body">
+              <form onSubmit={handleSubmitYield} className="form">
+                <label className="login-field-label">Crop Name</label>
+                <input type="text" placeholder="e.g. Wheat, Rice, Cotton"
+                  value={submitForm.crop_name}
+                  onChange={e => setSubmitForm({ ...submitForm, crop_name: e.target.value })} required />
+
+                <label className="login-field-label">Farm Location</label>
+                <input type="text" placeholder="Village, District"
+                  value={submitForm.farm_location}
+                  onChange={e => setSubmitForm({ ...submitForm, farm_location: e.target.value })} required />
+
+                <label className="login-field-label">State</label>
+                <select value={submitForm.region}
+                  onChange={e => setSubmitForm({ ...submitForm, region: e.target.value })} required>
+                  <option value="">Select State</option>
+                  {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+
+                <label className="login-field-label">Quantity</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="number" placeholder="Quantity" min="0.01" step="0.01"
+                    value={submitForm.quantity_kg}
+                    onChange={e => setSubmitForm({ ...submitForm, quantity_kg: e.target.value })} required />
+                  <select value={submitForm.batch_unit}
+                    onChange={e => setSubmitForm({ ...submitForm, batch_unit: e.target.value })}>
+                    <option value="kg">kg</option>
+                    <option value="quintal">quintal</option>
+                    <option value="ton">ton</option>
+                    <option value="g">g</option>
+                  </select>
+                </div>
+
+                <label className="login-field-label">Harvest Date</label>
+                <input type="date" value={submitForm.harvest_date}
+                  onChange={e => setSubmitForm({ ...submitForm, harvest_date: e.target.value })} required />
+
+                <label className="login-field-label">Additional Notes (optional)</label>
+                <textarea placeholder="Any notes about the crop, storage, etc."
+                  value={submitForm.additional_notes} rows="2"
+                  onChange={e => setSubmitForm({ ...submitForm, additional_notes: e.target.value })} />
+
+                {submitError && <div className="error-msg">{submitError}</div>}
+
+                <div className="modal-actions">
+                  <button type="submit" className="btn-primary" disabled={submitLoading}>
+                    {submitLoading ? 'Submitting...' : 'Submit Yield'}
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => setShowSubmitForm(false)}>Cancel</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Issue Modal */}
+      {issueModal.open && (
+        <div className="modal-overlay" onClick={() => setIssueModal({ open: false, yieldId: null, batchNumber: '' })}>
+          <div className="app-modal" onClick={e => e.stopPropagation()}>
+            <div className="cert-modal-header">
+              <h2>⚠️ Raise Issue</h2>
+              <button className="cert-modal-close" onClick={() => setIssueModal({ open: false, yieldId: null, batchNumber: '' })}>×</button>
+            </div>
+            <div className="cert-modal-body">
+              <p>Batch: <strong>{issueModal.batchNumber}</strong></p>
+              <p className="text-muted" style={{ fontSize: '0.85rem' }}>Describe the suspicious activity or discrepancy you noticed with your yield's inspection result. A fraud analyst will investigate.</p>
+              <textarea
+                rows="4"
+                placeholder="Describe the issue in detail (min. 10 characters)..."
+                value={issueText}
+                onChange={e => setIssueText(e.target.value)}
+                style={{ width: '100%', marginTop: '0.75rem', padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}
+              />
+              {issueError && <div className="error-msg" style={{ marginTop: '0.5rem' }}>{issueError}</div>}
+              {issueSuccess && <div className="success-msg" style={{ marginTop: '0.5rem' }}>{issueSuccess}</div>}
+              <div className="modal-actions" style={{ marginTop: '1rem' }}>
+                <button className="btn-primary" onClick={handleRaiseIssue} disabled={issueLoading}>
+                  {issueLoading ? 'Submitting...' : 'Submit Issue'}
+                </button>
+                <button className="btn-secondary" onClick={() => setIssueModal({ open: false, yieldId: null, batchNumber: '' })}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Yields Table */}
+      {loading ? (
+        <div className="loading">Loading your yields...</div>
+      ) : yields.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+          <Package size={48} style={{ opacity: 0.3, marginBottom: '1rem' }} />
+          <h3>No yields submitted yet</h3>
+          <p className="text-muted">Click "Submit New Yield" to get started.</p>
+        </div>
+      ) : (
+        <div className="card">
+          <h2 style={{ marginBottom: '1rem' }}>My Yield Submissions</h2>
+          <div className="table-responsive">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Batch #</th>
+                  <th>Crop</th>
+                  <th>Location</th>
+                  <th>Quantity</th>
+                  <th>Harvest Date</th>
+                  <th>Status</th>
+                  <th>Quality Grade</th>
+                  <th>Price/Unit</th>
+                  <th>Total Price</th>
+                  <th>Certificate #</th>
+                  <th>Inspector Notes</th>
+                  <th>Inspected At</th>
+                  <th>Issue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {yields.map(y => (
+                  <tr key={y.id} style={y.issue_raised ? { backgroundColor: '#fff8f0' } : {}}>
+                    <td><strong>{y.batch_number}</strong></td>
+                    <td>{y.crop_name}</td>
+                    <td>{y.farm_location}{y.region ? `, ${y.region}` : ''}</td>
+                    <td>{parseFloat(y.quantity_kg).toLocaleString()} {y.batch_unit}</td>
+                    <td>{new Date(y.harvest_date).toLocaleDateString()}</td>
+                    <td>{statusBadge(y.status)}</td>
+                    <td>{gradeBadge(y.quality_grade)}</td>
+                    <td>{y.price_per_unit ? `₹${Number(y.price_per_unit).toLocaleString()}` : <span className="text-muted">—</span>}</td>
+                    <td>{y.total_price ? `₹${Number(y.total_price).toLocaleString()}` : <span className="text-muted">—</span>}</td>
+                    <td>{y.certificate_number || <span className="text-muted">—</span>}</td>
+                    <td style={{ maxWidth: '160px', fontSize: '0.8rem' }}>{y.inspection_notes || <span className="text-muted">—</span>}</td>
+                    <td>{y.inspected_at ? new Date(y.inspected_at).toLocaleDateString() : <span className="text-muted">—</span>}</td>
+                    <td>
+                      {y.issue_raised ? (
+                        <span className="badge badge-orange">Issue Raised</span>
+                      ) : y.status === 'INSPECTED' ? (
+                        <button className="btn-danger-small" onClick={() => openIssueModal(y)}>
+                          <AlertTriangle size={12} /> Raise Issue
+                        </button>
+                      ) : (
+                        <span className="text-muted" style={{ fontSize: '0.75rem' }}>Awaiting inspection</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// INSPECTOR: FARMER YIELDS INSPECTION PAGE
+// ─────────────────────────────────────────────
+function InspectorYieldsPage({ user }) {
+  const [yields, setYields] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [inspectModal, setInspectModal] = useState({ open: false, yieldItem: null });
+  const [inspectForm, setInspectForm] = useState({ quality_grade: 'A', price_per_unit: '', inspection_notes: '' });
+  const [inspectLoading, setInspectLoading] = useState(false);
+  const [inspectError, setInspectError] = useState('');
+  const [inspectSuccess, setInspectSuccess] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+
+  const loadYields = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/farmer/pending-yields');
+      setYields(res.data.yields || []);
+    } catch (err) {
+      console.error('Failed to load farmer yields', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadYields(); }, [loadYields]);
+
+  const openInspect = (yieldItem) => {
+    setInspectModal({ open: true, yieldItem });
+    setInspectForm({
+      quality_grade: yieldItem.quality_grade || 'A',
+      price_per_unit: yieldItem.price_per_unit || '',
+      inspection_notes: yieldItem.inspection_notes || ''
+    });
+    setInspectError('');
+    setInspectSuccess('');
+  };
+
+  const handleInspect = async (e) => {
+    e.preventDefault();
+    setInspectLoading(true);
+    setInspectError('');
+    setInspectSuccess('');
+    try {
+      await api.post(`/farmer/yield/${inspectModal.yieldItem.id}/inspect`, inspectForm);
+      setInspectSuccess('Inspection submitted successfully!');
+      loadYields();
+      setTimeout(() => setInspectModal({ open: false, yieldItem: null }), 1500);
+    } catch (err) {
+      setInspectError(err.response?.data?.error || 'Failed to submit inspection');
+    } finally {
+      setInspectLoading(false);
+    }
+  };
+
+  const filtered = filterStatus ? yields.filter(y => y.status === filterStatus) : yields;
+
+  const statusBadge = (status) => {
+    const map = { PENDING: 'badge-gray', INSPECTED: 'badge-green' };
+    return <span className={`badge ${map[status] || 'badge-gray'}`}>{status}</span>;
+  };
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <div>
+          <h1>🔍 Farmer Yield Inspections</h1>
+          <p className="text-muted">Review and inspect farmer-submitted crop yields, assign quality grades and prices.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <select className="form-control w-auto" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <option value="">All Statuses</option>
+            <option value="PENDING">Pending</option>
+            <option value="INSPECTED">Inspected</option>
+          </select>
+          <button className="btn-secondary" onClick={loadYields}>Refresh</button>
+        </div>
+      </div>
+
+      {/* Inspect Modal */}
+      {inspectModal.open && inspectModal.yieldItem && (
+        <div className="modal-overlay" onClick={() => setInspectModal({ open: false, yieldItem: null })}>
+          <div className="app-modal" onClick={e => e.stopPropagation()}>
+            <div className="cert-modal-header">
+              <h2>Inspect Yield</h2>
+              <button className="cert-modal-close" onClick={() => setInspectModal({ open: false, yieldItem: null })}>×</button>
+            </div>
+            <div className="cert-modal-body">
+              <div style={{ background: '#f8f9fa', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.88rem' }}>
+                <div><strong>Batch:</strong> {inspectModal.yieldItem.batch_number}</div>
+                <div><strong>Farmer:</strong> {inspectModal.yieldItem.farmer_name} ({inspectModal.yieldItem.farmer_email})</div>
+                <div><strong>Crop:</strong> {inspectModal.yieldItem.crop_name}</div>
+                <div><strong>Quantity:</strong> {parseFloat(inspectModal.yieldItem.quantity_kg).toLocaleString()} {inspectModal.yieldItem.batch_unit}</div>
+                <div><strong>Location:</strong> {inspectModal.yieldItem.farm_location}, {inspectModal.yieldItem.region}</div>
+                <div><strong>Harvest Date:</strong> {new Date(inspectModal.yieldItem.harvest_date).toLocaleDateString()}</div>
+                {inspectModal.yieldItem.additional_notes && <div><strong>Farmer Notes:</strong> {inspectModal.yieldItem.additional_notes}</div>}
+              </div>
+
+              <form onSubmit={handleInspect} className="form">
+                <label className="login-field-label">Quality Grade</label>
+                <select value={inspectForm.quality_grade}
+                  onChange={e => setInspectForm({ ...inspectForm, quality_grade: e.target.value })} required>
+                  <option value="A">A — Premium</option>
+                  <option value="B">B — Good</option>
+                  <option value="C">C — Average</option>
+                  <option value="D">D — Below Average</option>
+                  <option value="F">F — Rejected</option>
+                </select>
+
+                <label className="login-field-label">Price per Unit (₹ / {inspectModal.yieldItem.batch_unit})</label>
+                <input type="number" placeholder={`₹ per ${inspectModal.yieldItem.batch_unit}`}
+                  min="0.01" step="0.01"
+                  value={inspectForm.price_per_unit}
+                  onChange={e => setInspectForm({ ...inspectForm, price_per_unit: e.target.value })} required />
+
+                <label className="login-field-label">Inspection Notes (optional)</label>
+                <textarea rows="3" placeholder="Any observations about the crop quality, storage condition, etc."
+                  value={inspectForm.inspection_notes}
+                  onChange={e => setInspectForm({ ...inspectForm, inspection_notes: e.target.value })} />
+
+                {inspectError && <div className="error-msg">{inspectError}</div>}
+                {inspectSuccess && <div className="success-msg">{inspectSuccess}</div>}
+
+                <div className="modal-actions">
+                  <button type="submit" className="btn-primary" disabled={inspectLoading}>
+                    {inspectLoading ? 'Submitting...' : 'Submit Inspection'}
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => setInspectModal({ open: false, yieldItem: null })}>Cancel</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="loading">Loading farmer yields...</div>
+      ) : filtered.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+          <CheckCircle size={48} style={{ opacity: 0.3, marginBottom: '1rem' }} />
+          <h3>No yields found</h3>
+          <p className="text-muted">Farmer yield submissions will appear here for inspection.</p>
+        </div>
+      ) : (
+        <div className="card">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Batch #</th>
+                <th>Farmer</th>
+                <th>Crop</th>
+                <th>Location</th>
+                <th>Quantity</th>
+                <th>Harvest Date</th>
+                <th>Status</th>
+                <th>Grade</th>
+                <th>Price/Unit</th>
+                <th>Total Price</th>
+                <th>Certificate #</th>
+                <th>Submitted</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(y => (
+                <tr key={y.id} style={y.issue_raised ? { backgroundColor: '#fff3cd' } : {}}>
+                  <td><strong>{y.batch_number}</strong></td>
+                  <td>
+                    <div>{y.farmer_name}</div>
+                    <small className="text-muted">{y.farmer_email}</small>
+                  </td>
+                  <td>{y.crop_name}</td>
+                  <td>{y.farm_location}{y.region ? `, ${y.region}` : ''}</td>
+                  <td>{parseFloat(y.quantity_kg).toLocaleString()} {y.batch_unit}</td>
+                  <td>{new Date(y.harvest_date).toLocaleDateString()}</td>
+                  <td>{statusBadge(y.status)}</td>
+                  <td>{y.quality_grade ? <span className="badge badge-green">{y.quality_grade}</span> : <span className="text-muted">—</span>}</td>
+                  <td>{y.price_per_unit ? `₹${Number(y.price_per_unit).toLocaleString()}` : <span className="text-muted">—</span>}</td>
+                  <td>{y.total_price ? `₹${Number(y.total_price).toLocaleString()}` : <span className="text-muted">—</span>}</td>
+                  <td style={{ fontSize: '0.8rem' }}>{y.certificate_number || <span className="text-muted">—</span>}</td>
+                  <td>{new Date(y.created_at).toLocaleDateString()}</td>
+                  <td>
+                    {y.issue_raised && (
+                      <span className="badge badge-orange" style={{ display: 'block', marginBottom: '4px' }}>⚠ Issue Raised</span>
+                    )}
+                    <button className="btn-primary-small" onClick={() => openInspect(y)}>
+                      {y.status === 'INSPECTED' ? 'Re-Inspect' : 'Inspect'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

@@ -60,6 +60,20 @@ router.get('/', authenticateToken, async (req, res) => {
       conditions.push(`b.created_by = $${params.length + 1}`);
       params.push(req.user.id);
     }
+
+    if (req.user.role === 'buyer') {
+      // Only show batches with available quantity and a valid certificate
+      conditions.push(`GREATEST(
+        b.quantity_kg - COALESCE((
+          SELECT SUM(po.requested_quantity_kg)
+          FROM purchase_orders po
+          WHERE po.batch_id = b.id
+            AND po.status IN ('REQUESTED', 'APPROVED', 'FULFILLED')
+        ), 0),
+        0
+      ) > 0`);
+      conditions.push(`EXISTS (SELECT 1 FROM certificates c WHERE c.batch_id = b.id AND c.is_valid = true)`);
+    }
     
     if (product_type) {
       conditions.push(`b.product_type = $${params.length + 1}`);

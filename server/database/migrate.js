@@ -2,16 +2,16 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 const poolConfig = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     }
-  : {
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT,
-      database: process.env.DB_NAME,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
+    : {
+        host: process.env.DB_HOST,
+        port: process.env.DB_PORT,
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
     };
 
 const pool = new Pool(poolConfig);
@@ -21,8 +21,13 @@ const schema = `
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-        CREATE TYPE user_role AS ENUM ('inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin');
+        CREATE TYPE user_role AS ENUM ('farmer', 'inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin');
     END IF;
+    -- Add farmer to existing enum if not present
+    BEGIN
+        ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'farmer';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'flag_severity') THEN
         CREATE TYPE flag_severity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
     END IF;
@@ -239,6 +244,48 @@ CREATE INDEX IF NOT EXISTS idx_users_region ON users(region);
 CREATE INDEX IF NOT EXISTS idx_batches_region ON batches(region);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_preferred_transporter_id ON purchase_orders(preferred_transporter_id);
 
+-- Farmer Yields table
+CREATE TABLE IF NOT EXISTS farmer_yields (
+    id SERIAL PRIMARY KEY,
+    batch_number VARCHAR(50) UNIQUE NOT NULL,
+    farmer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    crop_name VARCHAR(150) NOT NULL,
+    farm_location VARCHAR(255) NOT NULL,
+    region VARCHAR(100),
+    quantity_kg DECIMAL(10, 2) NOT NULL,
+    batch_unit VARCHAR(20) NOT NULL DEFAULT 'kg',
+    harvest_date DATE NOT NULL,
+    additional_notes TEXT,
+    status VARCHAR(30) DEFAULT 'PENDING',
+    issue_raised BOOLEAN DEFAULT false,
+    issue_description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_farmer_yields_farmer_id ON farmer_yields(farmer_id);
+CREATE INDEX IF NOT EXISTS idx_farmer_yields_status ON farmer_yields(status);
+CREATE INDEX IF NOT EXISTS idx_farmer_yields_batch_number ON farmer_yields(batch_number);
+
+-- Farm Inspections table
+CREATE TABLE IF NOT EXISTS farm_inspections (
+    id SERIAL PRIMARY KEY,
+    yield_id INTEGER REFERENCES farmer_yields(id) ON DELETE CASCADE,
+    inspector_id INTEGER REFERENCES users(id),
+    quality_grade VARCHAR(5) NOT NULL,
+    price_per_unit DECIMAL(12, 2) NOT NULL,
+    total_price DECIMAL(14, 2) NOT NULL,
+    inspection_notes TEXT,
+    certificate_number VARCHAR(100) UNIQUE,
+    status VARCHAR(30) DEFAULT 'COMPLETED',
+    inspected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_farm_inspections_yield_id ON farm_inspections(yield_id);
+CREATE INDEX IF NOT EXISTS idx_farm_inspections_inspector_id ON farm_inspections(inspector_id);
+
 -- Fraud Flags table
 CREATE TABLE IF NOT EXISTS fraud_flags (
     id SERIAL PRIMARY KEY,
@@ -338,6 +385,14 @@ BEGIN
         CREATE TRIGGER update_transporter_ratings_updated_at BEFORE UPDATE ON transporter_ratings
             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_farmer_yields_updated_at') THEN
+        CREATE TRIGGER update_farmer_yields_updated_at BEFORE UPDATE ON farmer_yields
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_farm_inspections_updated_at') THEN
+        CREATE TRIGGER update_farm_inspections_updated_at BEFORE UPDATE ON farm_inspections
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 END$$;
 
 -- Create views for common queries
@@ -371,34 +426,34 @@ GROUP BY flag_type, severity;
 `;
 
 async function migrate(skipPoolEnd = false) {
-  const client = await pool.connect();
-  try {
-    console.log('🚀 Starting database migration...');
-    
-    await client.query('BEGIN');
-    await client.query(schema);
-    await client.query('COMMIT');
-    
-    console.log('✅ Migration completed successfully!');
-    console.log('📊 Database schema created with:');
-    console.log('   - Users, Batches, Certificates');
-    console.log('   - Shipments, Fraud Flags, Fraud Cases');
-    console.log('   - Audit Logs');
-    console.log('   - Indexes and Views');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Migration failed:', error);
-    throw error;
-  } finally {
-    client.release();
+    const client = await pool.connect();
+    try {
+        console.log('🚀 Starting database migration...');
+
+        await client.query('BEGIN');
+        await client.query(schema);
+        await client.query('COMMIT');
+
+        console.log('✅ Migration completed successfully!');
+        console.log('📊 Database schema created with:');
+        console.log('   - Users, Batches, Certificates');
+        console.log('   - Shipments, Fraud Flags, Fraud Cases');
+        console.log('   - Audit Logs');
+        console.log('   - Indexes and Views');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('❌ Migration failed:', error);
+        throw error;
+    } finally {
+        client.release();
         if (!skipPoolEnd) {
             await pool.end();
         }
-  }
+    }
 }
 
 if (require.main === module) {
-  migrate();
+    migrate();
 }
 
 module.exports = migrate;

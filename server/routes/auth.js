@@ -1,9 +1,11 @@
+// routes/auth.js  — updated to include the 'farmer' role
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../database/db');
 const { body, validationResult } = require('express-validator');
+const { authenticateToken } = require('../middleware/auth');
 
 // Register
 router.post('/register',
@@ -11,7 +13,8 @@ router.post('/register',
     body('email').isEmail().normalizeEmail(),
     body('password').isLength({ min: 6 }),
     body('name').trim().notEmpty(),
-    body('role').isIn(['inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin'])
+    // ✅ Added 'farmer' to allowed roles
+    body('role').isIn(['farmer', 'inspector', 'transporter', 'buyer', 'fraud_analyst', 'admin'])
   ],
   async (req, res) => {
     try {
@@ -38,6 +41,7 @@ router.post('/register',
         ? Array.from(new Set(transporter_destination_states.map((state) => String(state || '').trim()).filter(Boolean)))
         : [];
 
+      // Farmers don't require a region/state (optional)
       if (['inspector', 'fraud_analyst'].includes(role) && !normalizedRegionInput) {
         return res.status(400).json({ error: 'state is required for inspector and fraud analyst roles' });
       }
@@ -46,7 +50,6 @@ router.post('/register',
         if (!normalizedTransporterSourceState) {
           return res.status(400).json({ error: 'transporter_source_state is required for transporter role' });
         }
-
         if (normalizedTransporterDestinationStates.length === 0) {
           return res.status(400).json({ error: 'transporter_destination_states is required for transporter role' });
         }
@@ -57,58 +60,35 @@ router.post('/register',
         : normalizedRegionInput;
 
       const transporterDestinationStatesForInsert = role === 'transporter'
-        ? Array.from(new Set([...normalizedTransporterDestinationStates, normalizedTransporterSourceState].filter(Boolean)))
+        ? normalizedTransporterDestinationStates
         : [];
 
-      // Check if user exists
-      const existingUser = await pool.query(
-        'SELECT id FROM users WHERE email = $1',
-        [email]
-      );
-
+      // Check if email already exists
+      const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
       if (existingUser.rows.length > 0) {
-        return res.status(400).json({ error: 'Email already registered' });
+        return res.status(409).json({ error: 'Email already registered' });
       }
 
-      // Hash password
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(password, 12);
 
-      // Create user
-      const result = await pool.query(
-        `INSERT INTO users (
-           email,
-           password_hash,
-           name,
-           role,
-           organization,
-           phone,
-           region,
-           transporter_source_state,
-           transporter_destination_states
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING id, email, name, role, organization, region, transporter_source_state, transporter_destination_states, created_at`,
-        [
-          email,
-          passwordHash,
-          name,
-          role,
-          organization,
-          phone,
-          normalizedRegion,
-          role === 'transporter' ? normalizedTransporterSourceState : null,
-          transporterDestinationStatesForInsert
-        ]
-      );
+      const result = await pool.query(`
+        INSERT INTO users (email, password_hash, name, role, phone, organization, region, transporter_source_state, transporter_destination_states)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id, email, name, role, phone, organization, region, created_at
+      `, [
+        email,
+        passwordHash,
+        name,
+        role,
+        phone || null,
+        organization || null,
+        normalizedRegion,
+        role === 'transporter' ? normalizedTransporterSourceState : null,
+        transporterDestinationStatesForInsert
+      ]);
 
       const user = result.rows[0];
-
-      // Generate token
-      const token = jwt.sign(
-        { userId: user.id, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-      );
+      const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
       res.status(201).json({
         message: 'User registered successfully',
@@ -116,7 +96,7 @@ router.post('/register',
         token
       });
     } catch (error) {
-      console.error('Registration error:', error);
+      console.error('Register error:', error);
       res.status(500).json({ error: 'Registration failed' });
     }
   }
@@ -137,10 +117,8 @@ router.post('/login',
 
       const { email, password } = req.body;
 
-      // Get user
       const result = await pool.query(
-        `SELECT id, email, password_hash, name, role, organization, region, transporter_source_state, transporter_destination_states, is_active
-         FROM users WHERE email = $1`,
+        'SELECT * FROM users WHERE email = $1',
         [email]
       );
 
@@ -151,28 +129,21 @@ router.post('/login',
       const user = result.rows[0];
 
       if (!user.is_active) {
-        return res.status(401).json({ error: 'Account is inactive' });
+        return res.status(403).json({ error: 'Account deactivated' });
       }
 
-      // Verify password
       const validPassword = await bcrypt.compare(password, user.password_hash);
       if (!validPassword) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
 
-      // Generate token
-      const token = jwt.sign(
-        { userId: user.id, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-      );
+      const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-      // Remove password hash from response
-      delete user.password_hash;
+      const { password_hash, ...userWithoutPassword } = user;
 
       res.json({
         message: 'Login successful',
-        user,
+        user: userWithoutPassword,
         token
       });
     } catch (error) {
@@ -182,32 +153,17 @@ router.post('/login',
   }
 );
 
-// Get current user
-router.get('/me', async (req, res) => {
+// Get current user profile
+router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
     const result = await pool.query(
-      `SELECT id, email, name, role, organization, region, transporter_source_state, transporter_destination_states, phone, created_at
-       FROM users WHERE id = $1 AND is_active = true`,
-      [decoded.userId]
+      'SELECT id, email, name, role, phone, organization, region, transporter_source_state, transporter_destination_states, created_at FROM users WHERE id = $1',
+      [req.user.id]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ error: 'Failed to get user' });
+    console.error('Get me error:', error);
+    res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
 

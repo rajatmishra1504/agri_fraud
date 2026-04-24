@@ -32,7 +32,7 @@ app.use(express.urlencoded({ extended: true }));
 // 2. Global Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 10000,
   message: { error: 'Too many requests, please try again shortly.' }
 });
 if (!isDevelopment) {
@@ -40,9 +40,9 @@ if (!isDevelopment) {
 }
 
 // 3. Static Assets & Persistence
-const uploadsRoot = process.env.UPLOADS_PATH 
-    ? path.resolve(process.env.UPLOADS_PATH) 
-    : path.join(__dirname, '../uploads');
+const uploadsRoot = process.env.UPLOADS_PATH
+  ? path.resolve(process.env.UPLOADS_PATH)
+  : path.join(__dirname, '../uploads');
 
 app.use('/uploads', express.static(uploadsRoot));
 
@@ -81,6 +81,7 @@ app.get('/api/system/health', authenticateToken, authorizeRoles('admin'), async 
 
 // 6. API MODULE ROUTES
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/farmer', require('./routes/farmer'));
 app.use('/api/batches', require('./routes/batches'));
 app.use('/api/certificates', require('./routes/certificates'));
 app.use('/api/shipments', require('./routes/shipments'));
@@ -99,18 +100,18 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
   app.get('*', (req, res) => {
     // DO NOT redirect API, Uploads, or Docs to the React frontend
-    const isExcluded = req.path.startsWith('/api/') || 
-                       req.path.startsWith('/uploads/') || 
-                       req.path === '/api-docs' || 
-                       req.path === '/health';
+    const isExcluded = req.path.startsWith('/api/') ||
+      req.path.startsWith('/uploads/') ||
+      req.path === '/api-docs' ||
+      req.path === '/health';
 
     if (!isExcluded) {
-        res.sendFile(path.join(__dirname, '../client/build/index.html'));
+      res.sendFile(path.join(__dirname, '../client/build/index.html'));
     } else {
-        res.status(404).json({ 
-            error: 'Resource not found', 
-            message: 'This file or endpoint may have been removed or is unavailable after a redeploy.' 
-        });
+      res.status(404).json({
+        error: 'Resource not found',
+        message: 'This file or endpoint may have been removed or is unavailable after a redeploy.'
+      });
     }
   });
 }
@@ -127,16 +128,16 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   console.log(`🚀 Agri-Fraud Server Live on Port ${PORT}`);
-  
+
   // Auto-generate system documentation on startup
   try {
     const { generateSystemDocumentation } = require('./utils/projectDocsGenerator');
-    const uploadsDir = process.env.UPLOADS_PATH 
-        ? path.resolve(process.env.UPLOADS_PATH) 
-        : path.join(__dirname, '../uploads');
+    const uploadsDir = process.env.UPLOADS_PATH
+      ? path.resolve(process.env.UPLOADS_PATH)
+      : path.join(__dirname, '../uploads');
 
     const docPath = path.join(uploadsDir, 'Agri-Fraud-System-Documentation.pdf');
-    
+
     // Create uploads dir if it doesn't exist
     const fs = require('fs');
     if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
