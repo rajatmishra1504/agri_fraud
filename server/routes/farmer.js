@@ -156,6 +156,31 @@ router.post('/yield/:id/raise-issue',
   }
 );
 
+// Public summary of completed inspections (batch_number + price) — used by buyer dashboard
+router.get('/inspections-summary',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          fi.price_per_unit,
+          fi.total_price,
+          fi.quality_grade,
+          fy.batch_number,
+          fy.crop_name
+        FROM farm_inspections fi
+        JOIN farmer_yields fy ON fy.id = fi.yield_id
+        WHERE fi.status = 'COMPLETED'
+        ORDER BY fi.inspected_at DESC
+      `);
+      res.json({ inspections: result.rows });
+    } catch (error) {
+      console.error('Inspections summary error:', error);
+      res.status(500).json({ error: 'Failed to fetch inspections summary' });
+    }
+  }
+);
+
 // Inspector: Get all pending yields for inspection
 router.get('/pending-yields',
   authenticateToken,
@@ -191,7 +216,7 @@ router.get('/pending-yields',
 );
 
 // Inspector: Submit inspection result for a farmer yield
-// This also auto-creates a batch in the batches table so the yield enters the supply chain
+// Auto-creates a batch AND a certificate so the yield appears in the buyers dashboard
 router.post('/yield/:id/inspect',
   authenticateToken,
   authorizeRoles('inspector', 'admin'),
@@ -200,11 +225,7 @@ router.post('/yield/:id/inspect',
     const client = await pool.connect();
     try {
       const { id } = req.params;
-      const {
-        quality_grade,
-        price_per_unit,
-        inspection_notes
-      } = req.body;
+      const { quality_grade, price_per_unit, inspection_notes } = req.body;
 
       if (!quality_grade || !price_per_unit) {
         return res.status(400).json({ error: 'quality_grade and price_per_unit are required' });
@@ -215,9 +236,11 @@ router.post('/yield/:id/inspect',
         return res.status(400).json({ error: 'quality_grade must be one of: A, B, C, D, F' });
       }
 
-      // Verify yield exists
+      // Fetch the farmer yield
       const yieldResult = await client.query(
-        `SELECT * FROM farmer_yields WHERE id = $1`,
+        `SELECT fy.*, u.name AS farmer_name FROM farmer_yields fy
+         JOIN users u ON u.id = fy.farmer_id
+         WHERE fy.id = $1`,
         [id]
       );
 
@@ -227,15 +250,14 @@ router.post('/yield/:id/inspect',
 
       const yieldData = yieldResult.rows[0];
       const totalPrice = Number(price_per_unit) * Number(yieldData.quantity_kg);
-      const certNumber = `CERT-${yieldData.batch_number}-${Date.now().toString().slice(-4)}`;
       const gradeUpper = String(quality_grade).toUpperCase();
+      const certNumber = `CERT-${yieldData.batch_number}-${Date.now().toString().slice(-6)}`;
 
       await client.query('BEGIN');
 
-      // Upsert inspection
+      // ── 1. Upsert inspection record ──────────────────────────────────
       const existingInspection = await client.query(
-        `SELECT id FROM farm_inspections WHERE yield_id = $1`,
-        [id]
+        `SELECT id FROM farm_inspections WHERE yield_id = $1`, [id]
       );
 
       let inspectionResult;
@@ -247,11 +269,8 @@ router.post('/yield/:id/inspect',
               inspector_id = $6, inspected_at = NOW(), status = 'COMPLETED'
           WHERE yield_id = $7
           RETURNING *
-        `, [
-          gradeUpper, price_per_unit, totalPrice,
-          inspection_notes || null, certNumber,
-          req.user.id, id
-        ]);
+        `, [gradeUpper, price_per_unit, totalPrice,
+          inspection_notes || null, certNumber, req.user.id, id]);
       } else {
         inspectionResult = await client.query(`
           INSERT INTO farm_inspections (
@@ -260,14 +279,11 @@ router.post('/yield/:id/inspect',
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, 'COMPLETED')
           RETURNING *
-        `, [
-          id, req.user.id, gradeUpper, price_per_unit,
-          totalPrice, inspection_notes || null, certNumber
-        ]);
+        `, [id, req.user.id, gradeUpper, price_per_unit,
+          totalPrice, inspection_notes || null, certNumber]);
       }
 
-      // Auto-create or update a batch in the batches table from this farmer yield
-      // batch_number mirrors the farmer yield batch_number for full traceability
+      // ── 2. Create or update batch from farmer yield ──────────────────
       const existingBatch = await client.query(
         `SELECT id FROM batches WHERE batch_number = $1`,
         [yieldData.batch_number]
@@ -275,16 +291,14 @@ router.post('/yield/:id/inspect',
 
       let batchId;
       if (existingBatch.rows.length > 0) {
-        // Re-inspection: update the existing batch with new grade
+        // Re-inspection: update grade on existing batch
         const updatedBatch = await client.query(`
-          UPDATE batches
-          SET quality_grade = $1, updated_at = NOW()
-          WHERE batch_number = $2
-          RETURNING id
+          UPDATE batches SET quality_grade = $1, updated_at = NOW()
+          WHERE batch_number = $2 RETURNING id
         `, [gradeUpper, yieldData.batch_number]);
         batchId = updatedBatch.rows[0].id;
       } else {
-        // First inspection: create the batch from farmer yield data
+        // First inspection: create batch from farmer yield
         const newBatch = await client.query(`
           INSERT INTO batches (
             batch_number, farm_name, farm_location, region,
@@ -308,7 +322,80 @@ router.post('/yield/:id/inspect',
         batchId = newBatch.rows[0].id;
       }
 
-      // Link the batch_id back to the farmer yield for full traceability
+      // ── 3. Auto-create certificate so batch appears on buyer dashboard ──
+      const crypto = require('crypto');
+      const QRCode = require('qrcode');
+      const { generateCertificatePdf } = require('../utils/pdfGenerator');
+      const { uploadToCloudinary } = require('../utils/cloudinary');
+      const path = require('path');
+      const fs = require('fs');
+
+      const hashData = `${batchId}-${certNumber}-${Date.now()}`;
+      const certHash = crypto.createHash('sha256').update(hashData).digest('hex');
+      const qrData = crypto.randomBytes(16).toString('hex');
+      const qrLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify/${qrData}`;
+      const qrCodeUrl = await QRCode.toDataURL(qrLink);
+
+      // Generate PDF
+      const baseUploadDir = process.env.UPLOADS_PATH
+        ? path.resolve(process.env.UPLOADS_PATH)
+        : path.join(__dirname, '../../uploads');
+      const uploadDir = path.join(baseUploadDir, 'certificates');
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+      const autoPdfName = `auto-${certNumber}.pdf`;
+      const localPdfPath = path.join(uploadDir, autoPdfName);
+
+      await generateCertificatePdf({
+        cert_number: certNumber,
+        batch_number: yieldData.batch_number,
+        product_type: yieldData.crop_name,
+        farm_name: yieldData.crop_name,
+        farm_location: yieldData.farm_location,
+        quantity_kg: yieldData.quantity_kg,
+        batch_unit: yieldData.batch_unit,
+        quality_grade: gradeUpper,
+        inspector_notes: inspection_notes || `Inspected by ${req.user.name}. Price: ₹${price_per_unit}/${yieldData.batch_unit}`,
+        inspector_name: req.user.name
+      }, qrCodeUrl, localPdfPath);
+
+      // Upload to Cloudinary (fallback to local path)
+      let pdfUrl = `/uploads/certificates/${autoPdfName}`;
+      try {
+        pdfUrl = await uploadToCloudinary(localPdfPath, 'certificates');
+      } catch (uploadErr) {
+        console.warn('Cloudinary upload failed, using local path:', uploadErr.message);
+      }
+
+      // Check if certificate already exists for this batch (re-inspection case)
+      const existingCert = await client.query(
+        `SELECT id FROM certificates WHERE batch_id = $1`, [batchId]
+      );
+
+      let certResult;
+      if (existingCert.rows.length > 0) {
+        // Re-inspection: update existing cert with new hash/QR/grade
+        certResult = await client.query(`
+          UPDATE certificates
+          SET cert_hash = $1, pdf_url = $2, qr_code = $3,
+              inspector_notes = $4, issued_by = $5, issued_at = NOW(), is_valid = true
+          WHERE batch_id = $6
+          RETURNING *
+        `, [certHash, pdfUrl, qrData,
+          inspection_notes || null, req.user.id, batchId]);
+      } else {
+        // First inspection: insert new certificate
+        certResult = await client.query(`
+          INSERT INTO certificates (
+            batch_id, cert_number, cert_hash, pdf_url, qr_code, inspector_notes, issued_by
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING *
+        `, [batchId, certNumber, certHash, pdfUrl, qrData,
+          inspection_notes || null, req.user.id]);
+      }
+
+      // ── 4. Update farmer yield status and link batch ─────────────────
       await client.query(
         `UPDATE farmer_yields SET status = 'INSPECTED', batch_id = $1, updated_at = NOW() WHERE id = $2`,
         [batchId, id]
@@ -317,9 +404,10 @@ router.post('/yield/:id/inspect',
       await client.query('COMMIT');
 
       res.status(201).json({
-        message: 'Inspection completed and batch created successfully',
+        message: 'Inspection completed. Batch and certificate created — product is now visible to buyers.',
         inspection: inspectionResult.rows[0],
-        batch_id: batchId
+        batch_id: batchId,
+        certificate: { ...certResult.rows[0], qr_code_image: qrCodeUrl }
       });
     } catch (error) {
       await client.query('ROLLBACK');

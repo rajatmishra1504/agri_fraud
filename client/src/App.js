@@ -1240,8 +1240,12 @@ function BuyerDashboard({ user }) {
     };
   }, [deliveryDetailsByBatch, getDefaultDeliveryDetails]);
 
-  const mapProductsFromData = (certificatesRes, batchesRes) => {
+  const mapProductsFromData = (certificatesRes, batchesRes, inspectionsRes) => {
     const batchesById = new Map(batchesRes.data.batches.map(batch => [batch.id, batch]));
+    // Build a map of batch_number -> inspection for price lookup
+    const inspectionsByBatchNum = new Map(
+      (inspectionsRes || []).map(ins => [ins.batch_number, ins])
+    );
     const seenBatchIds = new Set();
     const mappedProducts = [];
 
@@ -1254,6 +1258,7 @@ function BuyerDashboard({ user }) {
       const totalQuantity = Number(batch.quantity_kg || 0);
       const availableQuantity = Number(batch.available_quantity_kg ?? totalQuantity);
       const batchUnit = normalizeUnit(batch.batch_unit) || 'kg';
+      const inspection = inspectionsByBatchNum.get(batch.batch_number);
 
       seenBatchIds.add(cert.batch_id);
       mappedProducts.push({
@@ -1268,6 +1273,8 @@ function BuyerDashboard({ user }) {
         available_quantity_kg: availableQuantity,
         batch_unit: batchUnit,
         quality_grade: batch.quality_grade,
+        price_per_unit: inspection ? Number(inspection.price_per_unit) : null,
+        total_price: inspection ? Number(inspection.total_price) : null,
         inspector_name: cert.inspector_name,
         cert_number: cert.cert_number,
         qr_code: cert.qr_code,
@@ -1321,17 +1328,19 @@ function BuyerDashboard({ user }) {
 
   useEffect(() => {
     Promise.all([
-      api.get('/certificates?limit=40'),
-      api.get('/batches?limit=40'),
+      api.get('/certificates?limit=100'),
+      api.get('/batches?limit=100'),
       api.get('/shipments'),
-      api.get('/orders/my')
+      api.get('/orders/my'),
+      api.get('/farmer/inspections-summary').catch(() => ({ data: { inspections: [] } }))
     ])
-      .then(([certificatesRes, batchesRes, shipmentsRes, ordersRes]) => {
+      .then(([certificatesRes, batchesRes, shipmentsRes, ordersRes, inspectionsRes]) => {
         const allOrders = ordersRes.data.orders || [];
         const buyerOrderIds = new Set(allOrders.map(o => o.id));
         const allShipments = shipmentsRes.data.shipments || [];
         const buyerShipments = allShipments.filter(s => s.order_id && buyerOrderIds.has(s.order_id));
-        setProducts(mapProductsFromData(certificatesRes, batchesRes));
+        const inspections = inspectionsRes.data.inspections || [];
+        setProducts(mapProductsFromData(certificatesRes, batchesRes, inspections));
         setShipments(buyerShipments);
         setOrders(allOrders);
       })
