@@ -61,8 +61,6 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_region ON users(region);
-CREATE INDEX IF NOT EXISTS idx_users_transporter_source_state ON users(transporter_source_state);
-CREATE INDEX IF NOT EXISTS idx_users_transporter_destination_states ON users USING GIN (transporter_destination_states);
 
 -- Batches table
 CREATE TABLE IF NOT EXISTS batches (
@@ -89,7 +87,6 @@ CREATE INDEX IF NOT EXISTS idx_batches_batch_number ON batches(batch_number);
 CREATE INDEX IF NOT EXISTS idx_batches_product_type ON batches(product_type);
 CREATE INDEX IF NOT EXISTS idx_batches_created_by ON batches(created_by);
 CREATE INDEX IF NOT EXISTS idx_batches_region ON batches(region);
-CREATE INDEX IF NOT EXISTS idx_batches_is_deleted ON batches(is_deleted);
 
 -- Certificates table
 CREATE TABLE IF NOT EXISTS certificates (
@@ -210,6 +207,12 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='region') THEN
         ALTER TABLE users ADD COLUMN region VARCHAR(100);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='transporter_source_state') THEN
+        ALTER TABLE users ADD COLUMN transporter_source_state VARCHAR(100);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='transporter_destination_states') THEN
+        ALTER TABLE users ADD COLUMN transporter_destination_states TEXT[] DEFAULT ARRAY[]::TEXT[];
+    END IF;
     
     -- Batches updates
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batches' AND column_name='region') THEN
@@ -218,16 +221,24 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batches' AND column_name='batch_unit') THEN
         ALTER TABLE batches ADD COLUMN batch_unit VARCHAR(20) NOT NULL DEFAULT 'kg';
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batches' AND column_name='is_deleted') THEN
+        ALTER TABLE batches ADD COLUMN is_deleted BOOLEAN DEFAULT false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batches' AND column_name='deleted_at') THEN
+        ALTER TABLE batches ADD COLUMN deleted_at TIMESTAMP;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batches' AND column_name='deleted_by') THEN
+        ALTER TABLE batches ADD COLUMN deleted_by INTEGER REFERENCES users(id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batches' AND column_name='delete_reason') THEN
+        ALTER TABLE batches ADD COLUMN delete_reason TEXT;
+    END IF;
 
     -- Purchase Orders updates
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='purchase_orders' AND column_name='preferred_transporter_id') THEN
         ALTER TABLE purchase_orders ADD COLUMN preferred_transporter_id INTEGER REFERENCES users(id);
     END IF;
 
-    -- Farmer Yields: add batch_id for traceability to batches table
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='farmer_yields' AND column_name='batch_id') THEN
-        ALTER TABLE farmer_yields ADD COLUMN batch_id INTEGER REFERENCES batches(id) ON DELETE SET NULL;
-    END IF;
 
     -- Idempotent indexes for tables already created above (shipments, certificates)
     -- NOTE: fraud_flags and audit_logs indexes are created after those tables are defined below
@@ -240,7 +251,10 @@ END$$;
 -- Add indices for new columns after they've been confirmed to exist
 CREATE INDEX IF NOT EXISTS idx_shipments_order_id ON shipments(order_id);
 CREATE INDEX IF NOT EXISTS idx_users_region ON users(region);
+CREATE INDEX IF NOT EXISTS idx_users_transporter_source_state ON users(transporter_source_state);
+CREATE INDEX IF NOT EXISTS idx_users_transporter_destination_states ON users USING GIN (transporter_destination_states);
 CREATE INDEX IF NOT EXISTS idx_batches_region ON batches(region);
+CREATE INDEX IF NOT EXISTS idx_batches_is_deleted ON batches(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_preferred_transporter_id ON purchase_orders(preferred_transporter_id);
 
 -- Farmer Yields table
@@ -266,6 +280,25 @@ CREATE TABLE IF NOT EXISTS farmer_yields (
 CREATE INDEX IF NOT EXISTS idx_farmer_yields_farmer_id ON farmer_yields(farmer_id);
 CREATE INDEX IF NOT EXISTS idx_farmer_yields_status ON farmer_yields(status);
 CREATE INDEX IF NOT EXISTS idx_farmer_yields_batch_number ON farmer_yields(batch_number);
+
+-- Idempotent fixes for farmer_yields and certificates on existing databases
+DO $$
+BEGIN
+    -- Add batch_id to farmer_yields if missing (existing DBs won't have it)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='farmer_yields' AND column_name='batch_id') THEN
+        ALTER TABLE farmer_yields ADD COLUMN batch_id INTEGER REFERENCES batches(id) ON DELETE SET NULL;
+    END IF;
+
+    -- Widen cert_number from VARCHAR(50) to VARCHAR(100) to support long batch numbers
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='certificates' AND column_name='cert_number'
+        AND character_maximum_length < 100
+    ) THEN
+        DROP VIEW IF EXISTS active_fraud_flags CASCADE;
+        ALTER TABLE certificates ALTER COLUMN cert_number TYPE VARCHAR(100);
+    END IF;
+END$$;
 
 -- Farm Inspections table
 CREATE TABLE IF NOT EXISTS farm_inspections (
