@@ -443,6 +443,7 @@ function App() {
                 <Route path="/cases" element={<CaseList user={user} />} />
                 <Route path="/audit" element={<AuditPage user={user} />} />
                 <Route path="/farmer-yields" element={<InspectorYieldsPage user={user} />} />
+                <Route path="/report" element={<ReportPage user={user} />} />
                 <Route path="/verify/:qrCode" element={<VerifyCertificate />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
@@ -490,6 +491,7 @@ function Navbar({ user, logout, orderBadgeCount = 0 }) {
             <Link to="/audit"><History size={18} /> Audit Logs</Link>
           </>
         )}
+        <Link to="/report"><FileText size={18} /> My Report</Link>
       </div>
       <div className="nav-user">
         <span>{user.name} ({user.role})</span>
@@ -4643,6 +4645,191 @@ function InspectorYieldsPage({ user }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// REPORT PAGE — available for every role
+// ─────────────────────────────────────────────
+function ReportPage({ user }) {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [printing, setPrinting] = useState(false);
+
+  useEffect(() => {
+    const fetchReport = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get('/report/me');
+        setReport(res.data.report);
+      } catch (err) {
+        setError(err.response?.data?.error || 'Failed to load report');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReport();
+  }, []);
+
+  const handlePrint = () => {
+    setPrinting(true);
+    setTimeout(() => {
+      window.print();
+      setPrinting(false);
+    }, 200);
+  };
+
+  const handleDownloadCSV = () => {
+    if (!report) return;
+    const rows = report.records || report.flags || report.cases || [];
+    if (!rows.length) { alert('No records to export.'); return; }
+    const headers = Object.keys(rows[0]);
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row =>
+        headers.map(h => {
+          const val = row[h] === null || row[h] === undefined ? '' : String(row[h]).replace(/"/g, '""');
+          return `"${val}"`;
+        }).join(',')
+      )
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${report.role}_report_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) return <div className="loading">Loading report...</div>;
+  if (error) return <div className="error-msg" style={{ margin: '2rem' }}>{error}</div>;
+  if (!report) return null;
+
+  const { title, summary, records, flags, cases } = report;
+  const now = new Date().toLocaleString();
+
+  return (
+    <div className="report-page" style={{ padding: '1.5rem', maxWidth: 1100, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>{title}</h2>
+          <p style={{ margin: '0.25rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
+            Generated for <strong>{user.name}</strong> ({user.role}) &nbsp;·&nbsp; {now}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }} className="no-print">
+          <button className="btn-secondary" onClick={handleDownloadCSV}>⬇ Export CSV</button>
+          <button className="btn-primary" onClick={handlePrint} disabled={printing}>
+            {printing ? 'Preparing…' : '🖨 Print / Save PDF'}
+          </button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+        {Object.entries(summary).map(([key, value]) => {
+          if (typeof value === 'object' && !Array.isArray(value)) {
+            return (
+              <div key={key} className="stat-card" style={{ gridColumn: 'span 2' }}>
+                <div className="stat-label">{key.replace(/_/g, ' ').toUpperCase()}</div>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                  {Object.entries(value).map(([k, v]) => (
+                    <span key={k} className="badge badge-blue" style={{ fontSize: '0.85rem' }}>{k}: {v}</span>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          if (Array.isArray(value)) {
+            return (
+              <div key={key} className="stat-card" style={{ gridColumn: 'span 2' }}>
+                <div className="stat-label">{key.replace(/_/g, ' ').toUpperCase()}</div>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                  {value.map((item, i) => (
+                    <span key={i} className="badge badge-blue" style={{ fontSize: '0.8rem' }}>
+                      {Object.entries(item).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div key={key} className="stat-card">
+              <div className="stat-value">{value}</div>
+              <div className="stat-label">{key.replace(/_/g, ' ').toUpperCase()}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Records Table */}
+      {(records || flags) && (
+        <ReportTable title={report.role === 'fraud_analyst' ? 'Fraud Flags' : 'Records'} rows={records || flags} />
+      )}
+      {cases && cases.length > 0 && (
+        <ReportTable title="Cases" rows={cases} />
+      )}
+    </div>
+  );
+}
+
+function ReportTable({ title, rows }) {
+  const [page, setPage] = useState(1);
+  const perPage = 15;
+  if (!rows || rows.length === 0) return null;
+  const headers = Object.keys(rows[0]);
+  const totalPages = Math.ceil(rows.length / perPage);
+  const sliced = rows.slice((page - 1) * perPage, page * perPage);
+
+  return (
+    <div style={{ marginBottom: '2rem' }}>
+      <h4 style={{ marginBottom: '0.75rem', fontSize: '1.05rem', fontWeight: 600 }}>{title} ({rows.length})</h4>
+      <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+        <table className="data-table" style={{ width: '100%', minWidth: 600 }}>
+          <thead>
+            <tr>
+              {headers.map(h => (
+                <th key={h} style={{ whiteSpace: 'nowrap', fontSize: '0.78rem', padding: '0.6rem 0.75rem' }}>
+                  {h.replace(/_/g, ' ').toUpperCase()}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sliced.map((row, i) => (
+              <tr key={i}>
+                {headers.map(h => {
+                  let val = row[h];
+                  if (val === null || val === undefined) val = '—';
+                  else if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
+                  else if (typeof val === 'object') val = JSON.stringify(val).slice(0, 60) + '…';
+                  else if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val)) {
+                    val = new Date(val).toLocaleDateString();
+                  }
+                  return (
+                    <td key={h} style={{ fontSize: '0.82rem', padding: '0.5rem 0.75rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={String(row[h])}>
+                      {String(val)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }} className="no-print">
+          <button className="btn-secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹ Prev</button>
+          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>Page {page} of {totalPages}</span>
+          <button className="btn-secondary" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next ›</button>
         </div>
       )}
     </div>
