@@ -114,6 +114,73 @@ const STATE_ZONE_MAP = {
   'Puducherry': 'South Zone'
 };
 
+// State capital approximate coordinates for distance estimation
+const STATE_COORDINATES = {
+  'Andhra Pradesh': { lat: 13.0827, lng: 80.2707 },
+  'Arunachal Pradesh': { lat: 27.0844, lng: 93.6053 },
+  'Assam': { lat: 26.1433, lng: 91.7362 },
+  'Bihar': { lat: 25.5941, lng: 85.1376 },
+  'Chhattisgarh': { lat: 21.2514, lng: 81.6296 },
+  'Goa': { lat: 15.4909, lng: 73.8278 },
+  'Gujarat': { lat: 23.2156, lng: 72.6369 },
+  'Haryana': { lat: 30.7333, lng: 76.7794 },
+  'Himachal Pradesh': { lat: 31.1048, lng: 77.1734 },
+  'Jharkhand': { lat: 23.3441, lng: 85.3096 },
+  'Karnataka': { lat: 12.9716, lng: 77.5946 },
+  'Kerala': { lat: 8.5241, lng: 76.9366 },
+  'Madhya Pradesh': { lat: 23.2599, lng: 77.4126 },
+  'Maharashtra': { lat: 19.0760, lng: 72.8777 },
+  'Manipur': { lat: 24.8170, lng: 93.9368 },
+  'Meghalaya': { lat: 25.5788, lng: 91.8933 },
+  'Mizoram': { lat: 23.7307, lng: 92.7173 },
+  'Nagaland': { lat: 25.6747, lng: 94.1086 },
+  'Odisha': { lat: 20.2961, lng: 85.8245 },
+  'Punjab': { lat: 30.9010, lng: 75.8573 },
+  'Rajasthan': { lat: 26.9124, lng: 75.7873 },
+  'Sikkim': { lat: 27.3314, lng: 88.6138 },
+  'Tamil Nadu': { lat: 13.0827, lng: 80.2707 },
+  'Telangana': { lat: 17.3850, lng: 78.4867 },
+  'Tripura': { lat: 23.8315, lng: 91.2868 },
+  'Uttar Pradesh': { lat: 26.8467, lng: 80.9462 },
+  'Uttarakhand': { lat: 30.3165, lng: 78.0322 },
+  'West Bengal': { lat: 22.5726, lng: 88.3639 },
+  'Delhi': { lat: 28.7041, lng: 77.1025 },
+  'Jammu and Kashmir': { lat: 34.0837, lng: 74.7973 },
+  'Ladakh': { lat: 34.1526, lng: 77.5771 },
+  'Chandigarh': { lat: 30.7333, lng: 76.7794 },
+  'Puducherry': { lat: 11.9416, lng: 79.8083 },
+  'Andaman and Nicobar Islands': { lat: 11.7401, lng: 92.6586 },
+  'Dadra and Nagar Haveli and Daman and Diu': { lat: 20.3974, lng: 72.8328 },
+  'Lakshadweep': { lat: 10.5667, lng: 72.6417 },
+};
+
+// Haversine formula — returns road-estimated km (straight-line × 1.3 road factor).
+// Accepts full location strings like "Punjab, India" — does partial state name matching.
+const estimateDistance = (fromText, toText) => {
+  if (!fromText || !toText) return null;
+  const findCoord = (text) => {
+    const norm = String(text).trim();
+    if (STATE_COORDINATES[norm]) return STATE_COORDINATES[norm];
+    const found = Object.keys(STATE_COORDINATES).find(
+      (state) => norm.toLowerCase().includes(state.toLowerCase())
+    );
+    return found ? STATE_COORDINATES[found] : null;
+  };
+  const from = findCoord(fromText);
+  const to = findCoord(toText);
+  if (!from || !to) return null;
+  const R = 6371;
+  const dLat = (to.lat - from.lat) * Math.PI / 180;
+  const dLng = (to.lng - from.lng) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(from.lat * Math.PI / 180) *
+    Math.cos(to.lat * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  const straight = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(straight * 1.3); // ×1.3 road factor
+};
+
 const normalizeLocationText = (value) => String(value || '').trim();
 
 const toStateOrZoneTerms = (value) => {
@@ -2754,11 +2821,20 @@ function CreateCertificateForm({ onClose, onCreated }) {
 
 function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
   const todayIsoDate = new Date().toISOString().split('T')[0];
+
+  // Auto-estimate distance from pickup → delivery location when form opens
+  const autoDistance = estimateDistance(
+    deliveryRequest?.pickup_location,
+    deliveryRequest?.delivery_location
+  );
+
   const [formData, setFormData] = useState({
-    distance_km: '',
+    distance_km: autoDistance !== null ? String(autoDistance) : '',
     weight_kg: deliveryRequest?.requested_quantity_kg || '',
     vehicle_number: '',
-    expected_delivery_date: deliveryRequest?.preferred_delivery_date || '',
+    expected_delivery_date: deliveryRequest?.preferred_delivery_date
+      ? String(deliveryRequest.preferred_delivery_date).split('T')[0]
+      : '',
     current_location: deliveryRequest?.pickup_location || '',
     delivery_notes: '',
     delivered_to_name: '',
@@ -2849,6 +2925,15 @@ function CreateShipmentForm({ onClose, onCreated, deliveryRequest }) {
             onChange={(e) => setFormData({ ...formData, distance_km: e.target.value })}
             required
           />
+          {autoDistance !== null ? (
+            <div className="field-hint" style={{ color: 'var(--color-text-success)', marginTop: '0.25rem', fontSize: '0.8rem' }}>
+              📏 Auto-estimated: ~{autoDistance} km ({deliveryRequest.pickup_location} → {deliveryRequest.delivery_location}). Adjust if needed.
+            </div>
+          ) : (
+            <div className="field-hint" style={{ marginTop: '0.25rem', fontSize: '0.8rem' }}>
+              Enter the road distance in kilometres.
+            </div>
+          )}
 
           <label>Shipment Quantity</label>
           <input
@@ -4326,8 +4411,8 @@ function FarmerDashboard({ user }) {
                             </span>
                             {' · '}
                             <span className={`badge ${y.order_status === 'FULFILLED' ? 'badge-green' :
-                                y.order_status === 'APPROVED' ? 'badge-blue' :
-                                  y.order_status === 'REQUESTED' ? 'badge-yellow' : 'badge-gray'
+                              y.order_status === 'APPROVED' ? 'badge-blue' :
+                                y.order_status === 'REQUESTED' ? 'badge-yellow' : 'badge-gray'
                               }`} style={{ fontSize: '0.7rem' }}>
                               {y.order_status}
                             </span>
