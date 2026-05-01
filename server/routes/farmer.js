@@ -59,7 +59,7 @@ router.post('/yield',
   }
 );
 
-// Farmer views all their yields with inspection results
+// Farmer views all their yields with inspection results + buyer purchase info
 router.get('/my-yields',
   authenticateToken,
   authorizeRoles('farmer'),
@@ -76,10 +76,30 @@ router.get('/my-yields',
           fi.inspection_notes,
           fi.certificate_number,
           fi.inspected_at,
-          fi.status AS inspection_status
+          fi.status AS inspection_status,
+          -- Buyer purchase info (most recent active order for this yield's batch)
+          po.id AS order_id,
+          po.order_number,
+          po.status AS order_status,
+          po.requested_quantity_kg AS ordered_quantity,
+          po.requested_unit AS ordered_unit,
+          po.created_at AS ordered_at,
+          po.fulfilled_at,
+          buyer.name AS buyer_name,
+          buyer.email AS buyer_email,
+          buyer.region AS buyer_region
         FROM farmer_yields fy
         LEFT JOIN farm_inspections fi ON fi.yield_id = fy.id
         LEFT JOIN users u ON fi.inspector_id = u.id
+        LEFT JOIN LATERAL (
+          SELECT po.*
+          FROM purchase_orders po
+          WHERE po.batch_id = fy.batch_id
+            AND po.status IN ('REQUESTED', 'APPROVED', 'FULFILLED')
+          ORDER BY po.created_at DESC
+          LIMIT 1
+        ) po ON true
+        LEFT JOIN users buyer ON buyer.id = po.buyer_id
         WHERE fy.farmer_id = $1
         ORDER BY fy.created_at DESC
       `, [req.user.id]);

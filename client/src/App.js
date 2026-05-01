@@ -4142,44 +4142,75 @@ function FarmerDashboard({ user }) {
             <div className="cert-modal-body">
               <form onSubmit={handleSubmitYield} className="form">
                 <label className="login-field-label">Crop Name</label>
-                <input type="text" placeholder="e.g. Wheat, Rice, Cotton"
+                <input
+                  type="text"
+                  placeholder="e.g. Rice, Wheat, Tomato"
+                  className="form-control"
                   value={submitForm.crop_name}
-                  onChange={e => setSubmitForm({ ...submitForm, crop_name: e.target.value })} required />
+                  onChange={e => setSubmitForm({ ...submitForm, crop_name: e.target.value })}
+                  required
+                />
 
                 <label className="login-field-label">Farm Location</label>
-                <input type="text" placeholder="Village, District"
+                <input
+                  type="text"
+                  placeholder="e.g. Village, District"
+                  className="form-control"
                   value={submitForm.farm_location}
-                  onChange={e => setSubmitForm({ ...submitForm, farm_location: e.target.value })} required />
+                  onChange={e => setSubmitForm({ ...submitForm, farm_location: e.target.value })}
+                  required
+                />
 
-                <label className="login-field-label">State</label>
-                <select value={submitForm.region}
-                  onChange={e => setSubmitForm({ ...submitForm, region: e.target.value })} required>
-                  <option value="">Select State</option>
-                  {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <label className="login-field-label">Region</label>
+                <input
+                  type="text"
+                  placeholder="e.g. North, South"
+                  className="form-control"
+                  value={submitForm.region}
+                  onChange={e => setSubmitForm({ ...submitForm, region: e.target.value })}
+                />
 
                 <label className="login-field-label">Quantity</label>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <input type="number" placeholder="Quantity" min="0.01" step="0.01"
+                  <input
+                    type="number"
+                    placeholder="e.g. 500"
+                    className="form-control"
                     value={submitForm.quantity_kg}
-                    onChange={e => setSubmitForm({ ...submitForm, quantity_kg: e.target.value })} required />
-                  <select value={submitForm.batch_unit}
-                    onChange={e => setSubmitForm({ ...submitForm, batch_unit: e.target.value })}>
+                    onChange={e => setSubmitForm({ ...submitForm, quantity_kg: e.target.value })}
+                    required
+                    min="0"
+                    step="any"
+                  />
+                  <select
+                    className="form-control"
+                    style={{ maxWidth: '100px' }}
+                    value={submitForm.batch_unit}
+                    onChange={e => setSubmitForm({ ...submitForm, batch_unit: e.target.value })}
+                  >
                     <option value="kg">kg</option>
-                    <option value="quintal">quintal</option>
                     <option value="ton">ton</option>
-                    <option value="g">g</option>
+                    <option value="quintal">quintal</option>
                   </select>
                 </div>
 
                 <label className="login-field-label">Harvest Date</label>
-                <input type="date" value={submitForm.harvest_date}
-                  onChange={e => setSubmitForm({ ...submitForm, harvest_date: e.target.value })} required />
+                <input
+                  type="date"
+                  className="form-control"
+                  value={submitForm.harvest_date}
+                  onChange={e => setSubmitForm({ ...submitForm, harvest_date: e.target.value })}
+                  required
+                />
 
-                <label className="login-field-label">Additional Notes (optional)</label>
-                <textarea placeholder="Any notes about the crop, storage, etc."
-                  value={submitForm.additional_notes} rows="2"
-                  onChange={e => setSubmitForm({ ...submitForm, additional_notes: e.target.value })} />
+                <label className="login-field-label">Additional Notes</label>
+                <textarea
+                  className="form-control"
+                  placeholder="Any additional information..."
+                  value={submitForm.additional_notes}
+                  rows="2"
+                  onChange={e => setSubmitForm({ ...submitForm, additional_notes: e.target.value })}
+                />
 
                 {submitError && <div className="error-msg">{submitError}</div>}
 
@@ -4254,6 +4285,8 @@ function FarmerDashboard({ user }) {
                   <th>Certificate #</th>
                   <th>Inspector Notes</th>
                   <th>Inspected At</th>
+                  {/* ✅ NEW COLUMN */}
+                  <th>Purchased By</th>
                   <th>Issue</th>
                 </tr>
               </thead>
@@ -4272,6 +4305,45 @@ function FarmerDashboard({ user }) {
                     <td>{y.certificate_number || <span className="text-muted">—</span>}</td>
                     <td style={{ maxWidth: '160px', fontSize: '0.8rem' }}>{y.inspection_notes || <span className="text-muted">—</span>}</td>
                     <td>{y.inspected_at ? new Date(y.inspected_at).toLocaleDateString() : <span className="text-muted">—</span>}</td>
+
+                    {/* ✅ NEW: Buyer Purchase Info */}
+                    <td style={{ minWidth: '180px' }}>
+                      {y.buyer_name ? (
+                        <div style={{
+                          padding: '0.5rem 0.65rem',
+                          background: 'rgba(46,125,50,0.07)',
+                          borderRadius: '8px',
+                          borderLeft: '3px solid #2e7d32'
+                        }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#2e7d32', marginBottom: '0.2rem' }}>
+                            🛒 {y.buyer_name}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: '0.78rem', lineHeight: 1.6 }}>
+                            {y.buyer_email}<br />
+                            {y.buyer_region && <>{y.buyer_region}<br /></>}
+                            <span>
+                              {y.ordered_quantity} {y.ordered_unit}
+                            </span>
+                            {' · '}
+                            <span className={`badge ${y.order_status === 'FULFILLED' ? 'badge-green' :
+                                y.order_status === 'APPROVED' ? 'badge-blue' :
+                                  y.order_status === 'REQUESTED' ? 'badge-yellow' : 'badge-gray'
+                              }`} style={{ fontSize: '0.7rem' }}>
+                              {y.order_status}
+                            </span>
+                            <br />
+                            <span style={{ fontSize: '0.72rem' }}>
+                              #{y.order_number} · {new Date(y.ordered_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                      ) : y.status === 'INSPECTED' ? (
+                        <span className="text-muted" style={{ fontSize: '0.8rem' }}>📦 Available</span>
+                      ) : (
+                        <span className="text-muted" style={{ fontSize: '0.8rem' }}>—</span>
+                      )}
+                    </td>
+
                     <td>
                       {y.issue_raised ? (
                         <span className="badge badge-orange">Issue Raised</span>
@@ -4293,7 +4365,6 @@ function FarmerDashboard({ user }) {
     </div>
   );
 }
-
 // ─────────────────────────────────────────────
 // INSPECTOR: FARMER YIELDS INSPECTION PAGE
 // ─────────────────────────────────────────────
