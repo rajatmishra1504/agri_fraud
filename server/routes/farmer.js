@@ -75,18 +75,33 @@ router.get('/my-yields',
       const result = await pool.query(`
         SELECT
           fy.*,
-          u.name AS inspector_name,
-          u.email AS inspector_email,
+          u_insp.name AS inspector_name,
+          u_insp.email AS inspector_email,
           fi.quality_grade,
           fi.price_per_unit,
           fi.total_price,
           fi.inspection_notes,
           fi.certificate_number,
           fi.inspected_at,
-          fi.status AS inspection_status
+          fi.status AS inspection_status,
+          u_buyer.name AS buyer_name,
+          u_buyer.email AS buyer_email,
+          u_buyer.region AS buyer_region,
+          po.requested_quantity_kg AS ordered_quantity,
+          po.batch_unit AS ordered_unit,
+          po.status AS order_status
         FROM farmer_yields fy
         LEFT JOIN farm_inspections fi ON fi.yield_id = fy.id
-        LEFT JOIN users u ON fi.inspector_id = u.id
+        LEFT JOIN users u_insp ON fi.inspector_id = u_insp.id
+        LEFT JOIN batches b ON b.id = fy.batch_id
+        LEFT JOIN LATERAL (
+          SELECT po.*
+          FROM purchase_orders po
+          WHERE po.batch_id = b.id
+          ORDER BY po.created_at DESC
+          LIMIT 1
+        ) po ON true
+        LEFT JOIN users u_buyer ON po.buyer_id = u_buyer.id
         WHERE fy.farmer_id = $1
         ORDER BY fy.created_at DESC
       `, [req.user.id]);
