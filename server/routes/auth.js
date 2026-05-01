@@ -98,6 +98,7 @@ router.post('/register',
 
       const passwordHash = await bcrypt.hash(password, 12);
 
+      // First insert without godown_id/godown_name
       const result = await pool.query(
         `INSERT INTO users (email, password_hash, role, name, phone, organization, region,
           transporter_source_state, transporter_destination_states, godown_id, godown_name)
@@ -115,6 +116,16 @@ router.post('/register',
       );
 
       const user = result.rows[0];
+
+      // If user is godown, update their godown_id to point to themselves
+      if (role === 'godown') {
+        await pool.query(
+          `UPDATE users SET godown_id = $1, godown_name = $2 WHERE id = $1`,
+          [user.id, user.name]
+        );
+        user.godown_id = user.id;
+        user.godown_name = user.name;
+      }
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role, name: user.name },
         process.env.JWT_SECRET || 'your-secret-key',
