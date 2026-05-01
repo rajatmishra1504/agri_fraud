@@ -444,6 +444,7 @@ function App() {
                 <Route path="/audit" element={<AuditPage user={user} />} />
                 <Route path="/farmer-yields" element={<InspectorYieldsPage user={user} />} />
                 <Route path="/report" element={<ReportPage user={user} />} />
+                <Route path="/godown" element={<GodownDashboard user={user} />} />
                 <Route path="/verify/:qrCode" element={<VerifyCertificate />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
@@ -490,6 +491,9 @@ function Navbar({ user, logout, orderBadgeCount = 0 }) {
             <Link to="/cases"><Search size={18} /> Cases</Link>
             <Link to="/audit"><History size={18} /> Audit Logs</Link>
           </>
+        )}
+        {user.role === 'godown' && (
+          <Link to="/godown"><Package size={18} /> Godown</Link>
         )}
         <Link to="/report"><FileText size={18} /> My Report</Link>
       </div>
@@ -844,6 +848,7 @@ function Login({ setUser }) {
                         <option value="buyer">Buyer</option>
                         <option value="inspector">Inspector</option>
                         <option value="transporter">Transporter</option>
+                        <option value="godown">Godown Head</option>
                         <option value="fraud_analyst">Fraud Analyst</option>
                         <option value="admin">Admin</option>
                       </select>
@@ -4652,6 +4657,334 @@ function InspectorYieldsPage({ user }) {
 }
 
 // ─────────────────────────────────────────────
+// GODOWN DASHBOARD
+// ─────────────────────────────────────────────
+function GodownDashboard({ user }) {
+  const [data, setData] = useState(null);
+  const [stock, setStock] = useState([]);
+  const [allYields, setAllYields] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [assigning, setAssigning] = useState(null);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [dashRes, stockRes, allRes] = await Promise.all([
+        api.get('/godown/dashboard'),
+        api.get('/godown/stock'),
+        api.get('/godown/all-yields'),
+      ]);
+      setData(dashRes.data);
+      setStock(stockRes.data.stock || []);
+      setAllYields(allRes.data.yields || []);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load godown data');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const assignYield = async (yieldId) => {
+    try {
+      setAssigning(yieldId);
+      await api.post(`/godown/assign-yield/${yieldId}`);
+      await load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to assign yield');
+    } finally {
+      setAssigning(null);
+    }
+  };
+
+  if (loading) return <div className="loading">Loading godown data...</div>;
+  if (error) return <div className="error-msg" style={{ margin: '2rem' }}>{error}</div>;
+  if (!data) return null;
+
+  const { stats, best_items, farmers, recent_yields } = data;
+
+  const tabs = [
+    { key: 'overview', label: '📊 Overview' },
+    { key: 'stock', label: '🏭 Stock' },
+    { key: 'yields', label: '📦 My Yields' },
+    { key: 'farmers', label: '👨‍🌾 Farmers' },
+    { key: 'assign', label: '➕ Assign Yields' },
+  ];
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <div>
+          <h1>🏭 Godown Dashboard</h1>
+          <p className="text-muted">Welcome, <strong>{user.name}</strong> — Godown Head</p>
+        </div>
+        <button className="btn-secondary" onClick={load}>Refresh</button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem' }}>
+        {tabs.map(t => (
+          <button key={t.key}
+            onClick={() => setActiveTab(t.key)}
+            className={activeTab === t.key ? 'btn-primary' : 'btn-secondary'}
+            style={{ fontSize: '0.85rem', padding: '6px 14px' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* OVERVIEW */}
+      {activeTab === 'overview' && (
+        <>
+          {/* Stat cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            {[
+              { label: 'Total Yields Received', value: stats.total_yields, color: '#2563eb' },
+              { label: 'Total Quantity (kg)', value: Number(stats.total_quantity_kg).toLocaleString(), color: '#7c3aed' },
+              { label: 'Stock Remaining (kg)', value: Number(stats.stock_remaining_kg).toLocaleString(), color: '#059669' },
+              { label: 'Sold Quantity (kg)', value: Number(stats.sold_quantity_kg).toLocaleString(), color: '#d97706' },
+              { label: 'Fulfilled Orders', value: stats.fulfilled_orders, color: '#16a34a' },
+              { label: 'Inspected Yields', value: stats.inspected_yields, color: '#0891b2' },
+            ].map(c => (
+              <div key={c.label} className="stat-card" style={{ background: '#f9fafb', borderRadius: 10, padding: '1rem', border: '1px solid #e5e7eb' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: c.color }}>{c.value}</div>
+                <div style={{ fontSize: '0.72rem', color: '#6b7280', marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{c.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Best Items */}
+          <div className="card" style={{ marginBottom: '1.5rem' }}>
+            <h3 style={{ marginBottom: '1rem' }}>🏆 Best Selling Items</h3>
+            {best_items.length === 0 ? (
+              <p className="text-muted">No sales data yet.</p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr><th>#</th><th>Crop</th><th>Sold (kg)</th><th>Orders</th></tr>
+                </thead>
+                <tbody>
+                  {best_items.map((item, i) => (
+                    <tr key={item.crop_name}>
+                      <td><span className="badge badge-blue">{i + 1}</span></td>
+                      <td><strong>{item.crop_name}</strong></td>
+                      <td>{Number(item.sold_kg).toLocaleString()} kg</td>
+                      <td>{item.order_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Recent Yields */}
+          <div className="card">
+            <h3 style={{ marginBottom: '1rem' }}>🕐 Recent Yields</h3>
+            {recent_yields.length === 0 ? (
+              <p className="text-muted">No yields assigned to this godown yet.</p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr><th>Batch</th><th>Crop</th><th>Farmer</th><th>Qty</th><th>Grade</th><th>Status</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                  {recent_yields.map(y => (
+                    <tr key={y.batch_number}>
+                      <td><strong>{y.batch_number}</strong></td>
+                      <td>{y.crop_name}</td>
+                      <td>{y.farmer_name}</td>
+                      <td>{Number(y.quantity_kg).toLocaleString()} {y.batch_unit}</td>
+                      <td>{y.quality_grade ? <span className="badge badge-green">{y.quality_grade}</span> : <span className="text-muted">—</span>}</td>
+                      <td><span className={`badge ${y.status === 'INSPECTED' ? 'badge-green' : 'badge-gray'}`}>{y.status}</span></td>
+                      <td>{new Date(y.created_at).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* STOCK */}
+      {activeTab === 'stock' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '1rem' }}>🏭 Current Stock by Crop</h3>
+          {stock.length === 0 ? (
+            <p className="text-muted">No inspected stock available yet.</p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Crop</th><th>Batches</th><th>Received (kg)</th><th>Sold (kg)</th><th>Remaining (kg)</th><th>Stock %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stock.map(s => {
+                  const pct = s.total_received_kg > 0 ? ((s.remaining_kg / s.total_received_kg) * 100).toFixed(1) : 0;
+                  return (
+                    <tr key={s.crop_name}>
+                      <td><strong>{s.crop_name}</strong></td>
+                      <td>{s.batch_count}</td>
+                      <td>{Number(s.total_received_kg).toLocaleString()} {s.batch_unit}</td>
+                      <td>{Number(s.sold_kg).toLocaleString()} {s.batch_unit}</td>
+                      <td><strong style={{ color: s.remaining_kg > 0 ? '#16a34a' : '#dc2626' }}>{Number(s.remaining_kg).toLocaleString()} {s.batch_unit}</strong></td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{ flex: 1, height: 8, background: '#e5e7eb', borderRadius: 4 }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: pct > 50 ? '#16a34a' : pct > 20 ? '#d97706' : '#dc2626', borderRadius: 4 }} />
+                          </div>
+                          <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>{pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* MY YIELDS */}
+      {activeTab === 'yields' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '1rem' }}>📦 All Yields in This Godown</h3>
+          {data.recent_yields.length === 0 ? (
+            <p className="text-muted">No yields assigned yet.</p>
+          ) : (
+            <GodownYieldsTable godownId={user.id} />
+          )}
+        </div>
+      )}
+
+      {/* FARMERS */}
+      {activeTab === 'farmers' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '1rem' }}>👨‍🌾 Farmers Supplying to This Godown</h3>
+          {farmers.length === 0 ? (
+            <p className="text-muted">No farmers have supplied yields to this godown yet.</p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr><th>Farmer</th><th>Email</th><th>Phone</th><th>Yields</th><th>Total Qty (kg)</th><th>Last Submission</th></tr>
+              </thead>
+              <tbody>
+                {farmers.map(f => (
+                  <tr key={f.id}>
+                    <td><strong>{f.name}</strong></td>
+                    <td>{f.email}</td>
+                    <td>{f.phone || <span className="text-muted">—</span>}</td>
+                    <td><span className="badge badge-blue">{f.yield_count}</span></td>
+                    <td>{Number(f.total_kg).toLocaleString()} kg</td>
+                    <td>{new Date(f.last_submission).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ASSIGN YIELDS */}
+      {activeTab === 'assign' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '0.5rem' }}>➕ Assign Inspected Yields to This Godown</h3>
+          <p className="text-muted" style={{ marginBottom: '1rem', fontSize: '0.875rem' }}>
+            Below are all inspected yields in the system. Click <strong>Assign to My Godown</strong> to take ownership.
+          </p>
+          {allYields.length === 0 ? (
+            <p className="text-muted">No unassigned inspected yields available.</p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr><th>Batch</th><th>Crop</th><th>Farmer</th><th>Qty</th><th>Grade</th><th>Location</th><th>Godown</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                {allYields.map(y => (
+                  <tr key={y.id}>
+                    <td><strong>{y.batch_number}</strong></td>
+                    <td>{y.crop_name}</td>
+                    <td>{y.farmer_name}</td>
+                    <td>{Number(y.quantity_kg).toLocaleString()} {y.batch_unit}</td>
+                    <td>{y.quality_grade ? <span className="badge badge-green">{y.quality_grade}</span> : <span className="text-muted">—</span>}</td>
+                    <td style={{ fontSize: '0.82rem' }}>{y.farm_location}{y.region ? `, ${y.region}` : ''}</td>
+                    <td>
+                      {y.godown_id === user.id
+                        ? <span className="badge badge-green">This Godown</span>
+                        : y.godown_id
+                          ? <span className="badge badge-gray">Other Godown</span>
+                          : <span className="badge badge-orange">Unassigned</span>
+                      }
+                    </td>
+                    <td>
+                      {y.godown_id === user.id ? (
+                        <span className="text-muted" style={{ fontSize: '0.8rem' }}>Already assigned</span>
+                      ) : (
+                        <button
+                          className="btn-primary-small"
+                          disabled={assigning === y.id}
+                          onClick={() => assignYield(y.id)}>
+                          {assigning === y.id ? 'Assigning...' : 'Assign to My Godown'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GodownYieldsTable({ godownId }) {
+  const [yields, setYields] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/godown/yields')
+      .then(res => setYields(res.data.yields || []))
+      .catch(() => setYields([]))
+      .finally(() => setLoading(false));
+  }, [godownId]);
+
+  if (loading) return <div className="loading">Loading...</div>;
+  if (yields.length === 0) return <p className="text-muted">No yields assigned yet.</p>;
+
+  return (
+    <table className="table">
+      <thead>
+        <tr><th>Batch</th><th>Crop</th><th>Farmer</th><th>Qty</th><th>Grade</th><th>Price/Unit</th><th>Total Value</th><th>Status</th><th>Date</th></tr>
+      </thead>
+      <tbody>
+        {yields.map(y => (
+          <tr key={y.id}>
+            <td><strong>{y.batch_number}</strong></td>
+            <td>{y.crop_name}</td>
+            <td>
+              <div>{y.farmer_name}</div>
+              <small className="text-muted">{y.farmer_email}</small>
+            </td>
+            <td>{Number(y.quantity_kg).toLocaleString()} {y.batch_unit}</td>
+            <td>{y.quality_grade ? <span className="badge badge-green">{y.quality_grade}</span> : <span className="text-muted">—</span>}</td>
+            <td>{y.price_per_unit ? `₹${Number(y.price_per_unit).toLocaleString()}` : <span className="text-muted">—</span>}</td>
+            <td>{y.total_price ? `₹${Number(y.total_price).toLocaleString()}` : <span className="text-muted">—</span>}</td>
+            <td><span className={`badge ${y.status === 'INSPECTED' ? 'badge-green' : 'badge-gray'}`}>{y.status}</span></td>
+            <td>{new Date(y.created_at).toLocaleDateString()}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ─────────────────────────────────────────────
 // REPORT PAGE — available for every role
 // ─────────────────────────────────────────────
 function ReportPage({ user }) {
@@ -4677,10 +5010,7 @@ function ReportPage({ user }) {
 
   const handlePrint = () => {
     setPrinting(true);
-    setTimeout(() => {
-      window.print();
-      setPrinting(false);
-    }, 200);
+    setTimeout(() => { window.print(); setPrinting(false); }, 200);
   };
 
   const handleDownloadCSV = () => {
@@ -4715,7 +5045,6 @@ function ReportPage({ user }) {
 
   return (
     <div className="report-page" style={{ padding: '1.5rem', maxWidth: 1100, margin: '0 auto' }}>
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>{title}</h2>
@@ -4730,8 +5059,6 @@ function ReportPage({ user }) {
           </button>
         </div>
       </div>
-
-      {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         {Object.entries(summary).map(([key, value]) => {
           if (typeof value === 'object' && !Array.isArray(value)) {
@@ -4768,8 +5095,6 @@ function ReportPage({ user }) {
           );
         })}
       </div>
-
-      {/* Records Table */}
       {(records || flags) && (
         <ReportTable title={report.role === 'fraud_analyst' ? 'Fraud Flags' : 'Records'} rows={records || flags} />
       )}
@@ -4787,7 +5112,6 @@ function ReportTable({ title, rows }) {
   const headers = Object.keys(rows[0]);
   const totalPages = Math.ceil(rows.length / perPage);
   const sliced = rows.slice((page - 1) * perPage, page * perPage);
-
   return (
     <div style={{ marginBottom: '2rem' }}>
       <h4 style={{ marginBottom: '0.75rem', fontSize: '1.05rem', fontWeight: 600 }}>{title} ({rows.length})</h4>
@@ -4810,12 +5134,9 @@ function ReportTable({ title, rows }) {
                   if (val === null || val === undefined) val = '—';
                   else if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
                   else if (typeof val === 'object') val = JSON.stringify(val).slice(0, 60) + '…';
-                  else if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val)) {
-                    val = new Date(val).toLocaleDateString();
-                  }
+                  else if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val)) val = new Date(val).toLocaleDateString();
                   return (
-                    <td key={h} style={{ fontSize: '0.82rem', padding: '0.5rem 0.75rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={String(row[h])}>
+                    <td key={h} style={{ fontSize: '0.82rem', padding: '0.5rem 0.75rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(row[h])}>
                       {String(val)}
                     </td>
                   );

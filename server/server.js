@@ -95,6 +95,8 @@ app.use('/api/weather', require('./routes/weather'));
 app.use('/api/reviewer-images', require('./routes/reviewerImages'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/report', require('./routes/report'));
+app.use('/api/godown', require('./routes/godown'));
+
 
 // 7. PRODUCTION FRONTEND SERVING
 if (process.env.NODE_ENV === 'production') {

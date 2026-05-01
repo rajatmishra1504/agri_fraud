@@ -120,6 +120,52 @@ router.get('/me', authenticateToken, async (req, res) => {
       };
     }
 
+    else if (role === 'godown') {
+      const [yieldsRes, stockRes] = await Promise.all([
+        pool.query(
+          `SELECT fy.batch_number, fy.crop_name, fy.quantity_kg, fy.batch_unit,
+                  fy.status, fy.created_at, u.name AS farmer_name,
+                  fi.quality_grade, fi.price_per_unit, fi.total_price
+           FROM farmer_yields fy
+           JOIN users u ON u.id = fy.farmer_id
+           LEFT JOIN farm_inspections fi ON fi.yield_id = fy.id
+           WHERE fy.godown_id = $1
+           ORDER BY fy.created_at DESC`,
+          [userId]
+        ),
+        pool.query(
+          `SELECT fy.crop_name,
+                  COALESCE(SUM(fy.quantity_kg),0) AS total_received_kg,
+                  COALESCE(SUM(COALESCE((
+                    SELECT SUM(po.requested_quantity_kg) FROM purchase_orders po
+                    JOIN batches b2 ON b2.id = po.batch_id
+                    JOIN farmer_yields fy2 ON fy2.batch_id = b2.id
+                    WHERE fy2.id = fy.id AND po.status IN ('REQUESTED','APPROVED','FULFILLED')
+                  ),0)),0) AS sold_kg
+           FROM farmer_yields fy
+           WHERE fy.godown_id = $1 AND fy.status = 'INSPECTED'
+           GROUP BY fy.crop_name`,
+          [userId]
+        ),
+      ]);
+      const rows = yieldsRes.rows;
+      const totalReceived = rows.reduce((s, r) => s + parseFloat(r.quantity_kg || 0), 0);
+      const totalSold = stockRes.rows.reduce((s, r) => s + parseFloat(r.sold_kg || 0), 0);
+      data = {
+        role,
+        title: 'Godown Activity Report',
+        summary: {
+          total_yields: rows.length,
+          inspected: rows.filter(r => r.status === 'INSPECTED').length,
+          pending: rows.filter(r => r.status === 'PENDING').length,
+          total_received_kg: totalReceived.toFixed(2),
+          total_sold_kg: totalSold.toFixed(2),
+          stock_remaining_kg: (totalReceived - totalSold).toFixed(2),
+        },
+        records: rows,
+      };
+    }
+
     else if (role === 'fraud_analyst') {
       const [flagsRes, casesRes] = await Promise.all([
         pool.query(
