@@ -17,7 +17,7 @@ const isDevelopment = (process.env.NODE_ENV || 'development') === 'development';
 // 1. Core Security & Middleware
 app.set('trust proxy', 1);
 app.use(helmet({
-  contentSecurityPolicy: false, // Allow external fonts and scripts for documentation
+  contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 app.use(cors({
@@ -46,7 +46,7 @@ const uploadsRoot = process.env.UPLOADS_PATH
 
 app.use('/uploads', express.static(uploadsRoot));
 
-// 4. PUBLIC DOCUMENTATION & STATUS (Must be before catch-all)
+// 4. PUBLIC DOCUMENTATION & STATUS
 app.get('/api', (req, res) => res.redirect('/api-docs'));
 
 app.get('/api-docs', (req, res) => {
@@ -94,19 +94,37 @@ app.use('/api/verify', require('./routes/verify'));
 app.use('/api/weather', require('./routes/weather'));
 app.use('/api/reviewer-images', require('./routes/reviewerImages'));
 app.use('/api/public', require('./routes/public'));
-app.use('/api/report', require('./routes/report'));
-app.use('/api/godown', require('./routes/godown'));
+app.use('/api/report', require('./routes/report'));   // ✅ NEW
+app.use('/api/godown', require('./routes/godown'));   // ✅ NEW
 
+// ⚠️ TEMPORARY MIGRATION ENDPOINT - REMOVE AFTER RUNNING ONCE
+app.get('/run-migration-godown', async (req, res) => {
+  try {
+    const migrateGodown = require('./database/migrateGodown');
+    await migrateGodown();
+    res.json({
+      success: true,
+      message: '✅ Migration completed successfully! The godown_id column has been added to users and farmer_yields tables. You can now register users with godown roles. IMPORTANT: Remove this endpoint from server.js and redeploy for security.'
+    });
+  } catch (err) {
+    console.error('Migration endpoint error:', err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
 
 // 7. PRODUCTION FRONTEND SERVING
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
   app.get('*', (req, res) => {
-    // DO NOT redirect API, Uploads, or Docs to the React frontend
     const isExcluded = req.path.startsWith('/api/') ||
       req.path.startsWith('/uploads/') ||
       req.path === '/api-docs' ||
-      req.path === '/health';
+      req.path === '/health' ||
+      req.path === '/run-migration-godown';
 
     if (!isExcluded) {
       res.sendFile(path.join(__dirname, '../client/build/index.html'));
@@ -128,38 +146,18 @@ app.use((err, req, res, next) => {
   });
 });
 
-// temporary route to run migration manually
-app.get('/run-migration-godown', async (req, res) => {
-  try {
-    const migrateGodown = require('./database/migrateGodown');
-    await migrateGodown();
-    res.json({ success: true, message: 'Migration complete! Now remove this endpoint.' });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   console.log(`🚀 Agri-Fraud Server Live on Port ${PORT}`);
 
-  // Auto-generate system documentation on startup
   try {
     const { generateSystemDocumentation } = require('./utils/projectDocsGenerator');
     const uploadsDir = process.env.UPLOADS_PATH
       ? path.resolve(process.env.UPLOADS_PATH)
       : path.join(__dirname, '../uploads');
-
-    const docPath = path.join(uploadsDir, 'Agri-Fraud-System-Documentation.pdf');
-
-    // Create uploads dir if it doesn't exist
-    const fs = require('fs');
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-    await generateSystemDocumentation(docPath);
-    console.log('📄 System Documentation PDF updated');
+    await generateSystemDocumentation(uploadsDir);
   } catch (err) {
-    console.error('⚠️ Could not generate system docs:', err.message);
+    // non-fatal
   }
 });
 
