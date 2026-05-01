@@ -96,8 +96,7 @@ app.use('/api/reviewer-images', require('./routes/reviewerImages'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/report', require('./routes/report'));
 app.use('/api/godown', require('./routes/godown'));
-app.use('/api/godown', require('./routes/godown'));
-app.use('/api/report', require('./routes/report'));
+
 
 // 7. PRODUCTION FRONTEND SERVING
 if (process.env.NODE_ENV === 'production') {
@@ -127,6 +126,17 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
     code: err.code || 'SERVER_ERROR'
   });
+});
+
+// temporary route to run migration manually
+app.get('/run-migration-godown', async (req, res) => {
+  try {
+    const migrateGodown = require('./database/migrateGodown');
+    await migrateGodown();
+    res.json({ success: true, message: 'Migration complete! Now remove this endpoint.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 const PORT = process.env.PORT || 5000;
