@@ -101,8 +101,8 @@ router.post('/register',
       // First insert without godown_id/godown_name
       const result = await pool.query(
         `INSERT INTO users (email, password_hash, role, name, phone, organization, region,
-          transporter_source_state, transporter_destination_states, godown_id, godown_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${transporterDestinationStatesForInsert}, $9, $10)
+          transporter_source_state, transporter_destination_states, godown_id, godown_name, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${transporterDestinationStatesForInsert}, $9, $10, true)
          RETURNING id, email, role, name, phone, organization, region, godown_id, godown_name, created_at`,
         [
           email, passwordHash, role, name,
