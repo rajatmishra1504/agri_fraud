@@ -870,6 +870,14 @@ function Login({ setUser }) {
                         </>
                       )}
 
+                      {formData.role === 'inspector' && (
+                        <GodownPickerField
+                          value={formData.godown_id || ''}
+                          onChange={(id) => setFormData({ ...formData, godown_id: id })}
+                          required
+                        />
+                      )}
+
                       {formData.role === 'farmer' && (
                         <>
                           <label className="login-field-label" htmlFor="register-farmer-state">State (optional)</label>
@@ -4295,6 +4303,12 @@ function FarmerDashboard({ user }) {
                   required
                 />
 
+                <GodownPickerField
+                  value={submitForm.godown_id || ''}
+                  onChange={(id) => setSubmitForm({ ...submitForm, godown_id: id })}
+                  required
+                />
+
                 <label className="login-field-label">Additional Notes</label>
                 <textarea
                   className="form-control"
@@ -4657,6 +4671,44 @@ function InspectorYieldsPage({ user }) {
 }
 
 // ─────────────────────────────────────────────
+// REUSABLE: GodownPickerField
+// Used in register form (inspector) and farmer yield submit form
+// ─────────────────────────────────────────────
+function GodownPickerField({ value, onChange, required }) {
+  const [godowns, setGodowns] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/auth/godowns')
+      .then(res => setGodowns(res.data.godowns || []))
+      .catch(() => setGodowns([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <>
+      <label className="login-field-label">Select Godown <span style={{ color: '#dc2626' }}>*</span></label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        required={required}
+        disabled={loading}
+      >
+        <option value="">{loading ? 'Loading godowns...' : 'Select Godown'}</option>
+        {godowns.map(g => (
+          <option key={g.id} value={g.id}>{g.name}{g.region ? ` — ${g.region}` : ''}</option>
+        ))}
+      </select>
+      {!loading && godowns.length === 0 && (
+        <div className="error-msg" style={{ marginTop: '0.25rem', fontSize: '0.8rem' }}>
+          No godowns registered yet. A Godown Head must register first.
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────
 // GODOWN DASHBOARD
 // ─────────────────────────────────────────────
 function GodownDashboard({ user }) {
@@ -4724,7 +4776,6 @@ function GodownDashboard({ user }) {
         <button className="btn-secondary" onClick={load}>Refresh</button>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem' }}>
         {tabs.map(t => (
           <button key={t.key}
@@ -4736,10 +4787,8 @@ function GodownDashboard({ user }) {
         ))}
       </div>
 
-      {/* OVERVIEW */}
       {activeTab === 'overview' && (
         <>
-          {/* Stat cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
             {[
               { label: 'Total Yields Received', value: stats.total_yields, color: '#2563eb' },
@@ -4749,23 +4798,18 @@ function GodownDashboard({ user }) {
               { label: 'Fulfilled Orders', value: stats.fulfilled_orders, color: '#16a34a' },
               { label: 'Inspected Yields', value: stats.inspected_yields, color: '#0891b2' },
             ].map(c => (
-              <div key={c.label} className="stat-card" style={{ background: '#f9fafb', borderRadius: 10, padding: '1rem', border: '1px solid #e5e7eb' }}>
+              <div key={c.label} style={{ background: '#f9fafb', borderRadius: 10, padding: '1rem', border: '1px solid #e5e7eb' }}>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, color: c.color }}>{c.value}</div>
                 <div style={{ fontSize: '0.72rem', color: '#6b7280', marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{c.label}</div>
               </div>
             ))}
           </div>
 
-          {/* Best Items */}
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <h3 style={{ marginBottom: '1rem' }}>🏆 Best Selling Items</h3>
-            {best_items.length === 0 ? (
-              <p className="text-muted">No sales data yet.</p>
-            ) : (
+            {best_items.length === 0 ? <p className="text-muted">No sales data yet.</p> : (
               <table className="table">
-                <thead>
-                  <tr><th>#</th><th>Crop</th><th>Sold (kg)</th><th>Orders</th></tr>
-                </thead>
+                <thead><tr><th>#</th><th>Crop</th><th>Sold (kg)</th><th>Orders</th></tr></thead>
                 <tbody>
                   {best_items.map((item, i) => (
                     <tr key={item.crop_name}>
@@ -4780,16 +4824,11 @@ function GodownDashboard({ user }) {
             )}
           </div>
 
-          {/* Recent Yields */}
           <div className="card">
             <h3 style={{ marginBottom: '1rem' }}>🕐 Recent Yields</h3>
-            {recent_yields.length === 0 ? (
-              <p className="text-muted">No yields assigned to this godown yet.</p>
-            ) : (
+            {recent_yields.length === 0 ? <p className="text-muted">No yields assigned yet.</p> : (
               <table className="table">
-                <thead>
-                  <tr><th>Batch</th><th>Crop</th><th>Farmer</th><th>Qty</th><th>Grade</th><th>Status</th><th>Date</th></tr>
-                </thead>
+                <thead><tr><th>Batch</th><th>Crop</th><th>Farmer</th><th>Qty</th><th>Godown</th><th>Grade</th><th>Status</th><th>Date</th></tr></thead>
                 <tbody>
                   {recent_yields.map(y => (
                     <tr key={y.batch_number}>
@@ -4797,6 +4836,7 @@ function GodownDashboard({ user }) {
                       <td>{y.crop_name}</td>
                       <td>{y.farmer_name}</td>
                       <td>{Number(y.quantity_kg).toLocaleString()} {y.batch_unit}</td>
+                      <td><span className="badge badge-blue">{y.godown_name || '—'}</span></td>
                       <td>{y.quality_grade ? <span className="badge badge-green">{y.quality_grade}</span> : <span className="text-muted">—</span>}</td>
                       <td><span className={`badge ${y.status === 'INSPECTED' ? 'badge-green' : 'badge-gray'}`}>{y.status}</span></td>
                       <td>{new Date(y.created_at).toLocaleDateString()}</td>
@@ -4809,18 +4849,13 @@ function GodownDashboard({ user }) {
         </>
       )}
 
-      {/* STOCK */}
       {activeTab === 'stock' && (
         <div className="card">
           <h3 style={{ marginBottom: '1rem' }}>🏭 Current Stock by Crop</h3>
-          {stock.length === 0 ? (
-            <p className="text-muted">No inspected stock available yet.</p>
-          ) : (
+          {stock.length === 0 ? <p className="text-muted">No inspected stock available yet.</p> : (
             <table className="table">
               <thead>
-                <tr>
-                  <th>Crop</th><th>Batches</th><th>Received (kg)</th><th>Sold (kg)</th><th>Remaining (kg)</th><th>Stock %</th>
-                </tr>
+                <tr><th>Crop</th><th>Batches</th><th>Received (kg)</th><th>Sold (kg)</th><th>Remaining (kg)</th><th>Stock %</th></tr>
               </thead>
               <tbody>
                 {stock.map(s => {
@@ -4849,29 +4884,19 @@ function GodownDashboard({ user }) {
         </div>
       )}
 
-      {/* MY YIELDS */}
       {activeTab === 'yields' && (
         <div className="card">
           <h3 style={{ marginBottom: '1rem' }}>📦 All Yields in This Godown</h3>
-          {data.recent_yields.length === 0 ? (
-            <p className="text-muted">No yields assigned yet.</p>
-          ) : (
-            <GodownYieldsTable godownId={user.id} />
-          )}
+          <GodownYieldsTable godownId={user.id} />
         </div>
       )}
 
-      {/* FARMERS */}
       {activeTab === 'farmers' && (
         <div className="card">
           <h3 style={{ marginBottom: '1rem' }}>👨‍🌾 Farmers Supplying to This Godown</h3>
-          {farmers.length === 0 ? (
-            <p className="text-muted">No farmers have supplied yields to this godown yet.</p>
-          ) : (
+          {farmers.length === 0 ? <p className="text-muted">No farmers have supplied yields yet.</p> : (
             <table className="table">
-              <thead>
-                <tr><th>Farmer</th><th>Email</th><th>Phone</th><th>Yields</th><th>Total Qty (kg)</th><th>Last Submission</th></tr>
-              </thead>
+              <thead><tr><th>Farmer</th><th>Email</th><th>Phone</th><th>Yields</th><th>Total Qty (kg)</th><th>Last Submission</th></tr></thead>
               <tbody>
                 {farmers.map(f => (
                   <tr key={f.id}>
@@ -4889,19 +4914,16 @@ function GodownDashboard({ user }) {
         </div>
       )}
 
-      {/* ASSIGN YIELDS */}
       {activeTab === 'assign' && (
         <div className="card">
           <h3 style={{ marginBottom: '0.5rem' }}>➕ Assign Inspected Yields to This Godown</h3>
           <p className="text-muted" style={{ marginBottom: '1rem', fontSize: '0.875rem' }}>
-            Below are all inspected yields in the system. Click <strong>Assign to My Godown</strong> to take ownership.
+            All inspected yields in the system. Click <strong>Assign to My Godown</strong> to take ownership.
           </p>
-          {allYields.length === 0 ? (
-            <p className="text-muted">No unassigned inspected yields available.</p>
-          ) : (
+          {allYields.length === 0 ? <p className="text-muted">No inspected yields available.</p> : (
             <table className="table">
               <thead>
-                <tr><th>Batch</th><th>Crop</th><th>Farmer</th><th>Qty</th><th>Grade</th><th>Location</th><th>Godown</th><th>Action</th></tr>
+                <tr><th>Batch</th><th>Crop</th><th>Farmer</th><th>Qty</th><th>Grade</th><th>Godown</th><th>Action</th></tr>
               </thead>
               <tbody>
                 {allYields.map(y => (
@@ -4911,7 +4933,6 @@ function GodownDashboard({ user }) {
                     <td>{y.farmer_name}</td>
                     <td>{Number(y.quantity_kg).toLocaleString()} {y.batch_unit}</td>
                     <td>{y.quality_grade ? <span className="badge badge-green">{y.quality_grade}</span> : <span className="text-muted">—</span>}</td>
-                    <td style={{ fontSize: '0.82rem' }}>{y.farm_location}{y.region ? `, ${y.region}` : ''}</td>
                     <td>
                       {y.godown_id === user.id
                         ? <span className="badge badge-green">This Godown</span>
@@ -4921,16 +4942,14 @@ function GodownDashboard({ user }) {
                       }
                     </td>
                     <td>
-                      {y.godown_id === user.id ? (
-                        <span className="text-muted" style={{ fontSize: '0.8rem' }}>Already assigned</span>
-                      ) : (
-                        <button
-                          className="btn-primary-small"
-                          disabled={assigning === y.id}
-                          onClick={() => assignYield(y.id)}>
-                          {assigning === y.id ? 'Assigning...' : 'Assign to My Godown'}
-                        </button>
-                      )}
+                      {y.godown_id === user.id
+                        ? <span className="text-muted" style={{ fontSize: '0.8rem' }}>Already assigned</span>
+                        : (
+                          <button className="btn-primary-small" disabled={assigning === y.id} onClick={() => assignYield(y.id)}>
+                            {assigning === y.id ? 'Assigning...' : 'Assign to My Godown'}
+                          </button>
+                        )
+                      }
                     </td>
                   </tr>
                 ))}
@@ -4967,10 +4986,7 @@ function GodownYieldsTable({ godownId }) {
           <tr key={y.id}>
             <td><strong>{y.batch_number}</strong></td>
             <td>{y.crop_name}</td>
-            <td>
-              <div>{y.farmer_name}</div>
-              <small className="text-muted">{y.farmer_email}</small>
-            </td>
+            <td><div>{y.farmer_name}</div><small className="text-muted">{y.farmer_email}</small></td>
             <td>{Number(y.quantity_kg).toLocaleString()} {y.batch_unit}</td>
             <td>{y.quality_grade ? <span className="badge badge-green">{y.quality_grade}</span> : <span className="text-muted">—</span>}</td>
             <td>{y.price_per_unit ? `₹${Number(y.price_per_unit).toLocaleString()}` : <span className="text-muted">—</span>}</td>
@@ -4994,46 +5010,24 @@ function ReportPage({ user }) {
   const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
-    const fetchReport = async () => {
-      try {
-        setLoading(true);
-        const res = await api.get('/report/me');
-        setReport(res.data.report);
-      } catch (err) {
-        setError(err.response?.data?.error || 'Failed to load report');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchReport();
+    api.get('/report/me')
+      .then(res => setReport(res.data.report))
+      .catch(err => setError(err.response?.data?.error || 'Failed to load report'))
+      .finally(() => setLoading(false));
   }, []);
 
-  const handlePrint = () => {
-    setPrinting(true);
-    setTimeout(() => { window.print(); setPrinting(false); }, 200);
-  };
+  const handlePrint = () => { setPrinting(true); setTimeout(() => { window.print(); setPrinting(false); }, 200); };
 
   const handleDownloadCSV = () => {
     if (!report) return;
     const rows = report.records || report.flags || report.cases || [];
     if (!rows.length) { alert('No records to export.'); return; }
     const headers = Object.keys(rows[0]);
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row =>
-        headers.map(h => {
-          const val = row[h] === null || row[h] === undefined ? '' : String(row[h]).replace(/"/g, '""');
-          return `"${val}"`;
-        }).join(',')
-      )
-    ].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
+    const csv = [headers.join(','), ...rows.map(row => headers.map(h => `"${String(row[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
     const a = document.createElement('a');
-    a.href = url;
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     a.download = `${report.role}_report_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
   };
 
   if (loading) return <div className="loading">Loading report...</div>;
@@ -5041,7 +5035,6 @@ function ReportPage({ user }) {
   if (!report) return null;
 
   const { title, summary, records, flags, cases } = report;
-  const now = new Date().toLocaleString();
 
   return (
     <div className="report-page" style={{ padding: '1.5rem', maxWidth: 1100, margin: '0 auto' }}>
@@ -5049,44 +5042,32 @@ function ReportPage({ user }) {
         <div>
           <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>{title}</h2>
           <p style={{ margin: '0.25rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
-            Generated for <strong>{user.name}</strong> ({user.role}) &nbsp;·&nbsp; {now}
+            Generated for <strong>{user.name}</strong> ({user.role}) &nbsp;·&nbsp; {new Date().toLocaleString()}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }} className="no-print">
           <button className="btn-secondary" onClick={handleDownloadCSV}>⬇ Export CSV</button>
-          <button className="btn-primary" onClick={handlePrint} disabled={printing}>
-            {printing ? 'Preparing…' : '🖨 Print / Save PDF'}
-          </button>
+          <button className="btn-primary" onClick={handlePrint} disabled={printing}>{printing ? 'Preparing…' : '🖨 Print / Save PDF'}</button>
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         {Object.entries(summary).map(([key, value]) => {
-          if (typeof value === 'object' && !Array.isArray(value)) {
-            return (
-              <div key={key} className="stat-card" style={{ gridColumn: 'span 2' }}>
-                <div className="stat-label">{key.replace(/_/g, ' ').toUpperCase()}</div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-                  {Object.entries(value).map(([k, v]) => (
-                    <span key={k} className="badge badge-blue" style={{ fontSize: '0.85rem' }}>{k}: {v}</span>
-                  ))}
-                </div>
+          if (typeof value === 'object' && !Array.isArray(value)) return (
+            <div key={key} className="stat-card" style={{ gridColumn: 'span 2' }}>
+              <div className="stat-label">{key.replace(/_/g, ' ').toUpperCase()}</div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                {Object.entries(value).map(([k, v]) => <span key={k} className="badge badge-blue" style={{ fontSize: '0.85rem' }}>{k}: {v}</span>)}
               </div>
-            );
-          }
-          if (Array.isArray(value)) {
-            return (
-              <div key={key} className="stat-card" style={{ gridColumn: 'span 2' }}>
-                <div className="stat-label">{key.replace(/_/g, ' ').toUpperCase()}</div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-                  {value.map((item, i) => (
-                    <span key={i} className="badge badge-blue" style={{ fontSize: '0.8rem' }}>
-                      {Object.entries(item).map(([k, v]) => `${k}: ${v}`).join(' | ')}
-                    </span>
-                  ))}
-                </div>
+            </div>
+          );
+          if (Array.isArray(value)) return (
+            <div key={key} className="stat-card" style={{ gridColumn: 'span 2' }}>
+              <div className="stat-label">{key.replace(/_/g, ' ').toUpperCase()}</div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                {value.map((item, i) => <span key={i} className="badge badge-blue" style={{ fontSize: '0.8rem' }}>{Object.entries(item).map(([k, v]) => `${k}: ${v}`).join(' | ')}</span>)}
               </div>
-            );
-          }
+            </div>
+          );
           return (
             <div key={key} className="stat-card">
               <div className="stat-value">{value}</div>
@@ -5095,12 +5076,8 @@ function ReportPage({ user }) {
           );
         })}
       </div>
-      {(records || flags) && (
-        <ReportTable title={report.role === 'fraud_analyst' ? 'Fraud Flags' : 'Records'} rows={records || flags} />
-      )}
-      {cases && cases.length > 0 && (
-        <ReportTable title="Cases" rows={cases} />
-      )}
+      {(records || flags) && <ReportTable title={report.role === 'fraud_analyst' ? 'Fraud Flags' : 'Records'} rows={records || flags} />}
+      {cases && cases.length > 0 && <ReportTable title="Cases" rows={cases} />}
     </div>
   );
 }
@@ -5118,13 +5095,7 @@ function ReportTable({ title, rows }) {
       <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #e5e7eb' }}>
         <table className="data-table" style={{ width: '100%', minWidth: 600 }}>
           <thead>
-            <tr>
-              {headers.map(h => (
-                <th key={h} style={{ whiteSpace: 'nowrap', fontSize: '0.78rem', padding: '0.6rem 0.75rem' }}>
-                  {h.replace(/_/g, ' ').toUpperCase()}
-                </th>
-              ))}
-            </tr>
+            <tr>{headers.map(h => <th key={h} style={{ whiteSpace: 'nowrap', fontSize: '0.78rem', padding: '0.6rem 0.75rem' }}>{h.replace(/_/g, ' ').toUpperCase()}</th>)}</tr>
           </thead>
           <tbody>
             {sliced.map((row, i) => (
@@ -5135,11 +5106,7 @@ function ReportTable({ title, rows }) {
                   else if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
                   else if (typeof val === 'object') val = JSON.stringify(val).slice(0, 60) + '…';
                   else if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val)) val = new Date(val).toLocaleDateString();
-                  return (
-                    <td key={h} style={{ fontSize: '0.82rem', padding: '0.5rem 0.75rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(row[h])}>
-                      {String(val)}
-                    </td>
-                  );
+                  return <td key={h} style={{ fontSize: '0.82rem', padding: '0.5rem 0.75rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(row[h])}>{String(val)}</td>;
                 })}
               </tr>
             ))}

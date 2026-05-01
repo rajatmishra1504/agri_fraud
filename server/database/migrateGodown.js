@@ -12,44 +12,35 @@ const pool = new Pool(poolConfig);
 async function migrateGodown() {
   const client = await pool.connect();
   try {
-    console.log('🚀 Starting godown migration...');
+    console.log('Starting godown migration...');
 
-    // 1. Add 'godown' to user_role enum (must be outside transaction)
+    // Add godown to user_role enum (outside transaction)
     try {
       await client.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'godown'`);
-      console.log("✅ 'godown' added to user_role enum");
+      console.log("godown added to user_role enum");
     } catch (err) {
-      if (!err.message.includes('already exists')) {
-        console.warn('⚠️  Enum warning:', err.message);
-      }
+      if (!err.message.includes('already exists')) console.warn('Enum warning:', err.message);
     }
 
     await client.query('BEGIN');
 
-    // 2. Add godown_id column to farmer_yields (links yield to a godown user)
-    await client.query(`
-      ALTER TABLE farmer_yields
-        ADD COLUMN IF NOT EXISTS godown_id INTEGER REFERENCES users(id) ON DELETE SET NULL
-    `);
-    console.log('✅ godown_id column added to farmer_yields');
+    // godown_id + godown_name on farmer_yields
+    await client.query(`ALTER TABLE farmer_yields ADD COLUMN IF NOT EXISTS godown_id INTEGER REFERENCES users(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE farmer_yields ADD COLUMN IF NOT EXISTS godown_name VARCHAR(255)`);
 
-    // 3. Add godown_name to farmer_yields (name of the godown/warehouse)
-    await client.query(`
-      ALTER TABLE farmer_yields
-        ADD COLUMN IF NOT EXISTS godown_name VARCHAR(255)
-    `);
-    console.log('✅ godown_name column added to farmer_yields');
+    // godown_id + godown_name on users (inspector belongs to a godown)
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS godown_id INTEGER REFERENCES users(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS godown_name VARCHAR(255)`);
 
-    // 4. Index for fast lookup
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_farmer_yields_godown_id ON farmer_yields(godown_id)
-    `);
+    // Indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_farmer_yields_godown_id ON farmer_yields(godown_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_users_godown_id ON users(godown_id)`);
 
     await client.query('COMMIT');
-    console.log('✅ Godown migration completed successfully!');
+    console.log('Godown migration completed successfully!');
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('❌ Godown migration failed:', err);
+    console.error('Godown migration failed:', err);
     throw err;
   } finally {
     client.release();
