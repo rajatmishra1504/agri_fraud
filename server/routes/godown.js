@@ -7,7 +7,7 @@ const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 // ─── GET /api/godown/dashboard ────────────────────────────────────────────────
 // Main dashboard stats for the godown head
 router.get('/dashboard', authenticateToken, authorizeRoles('godown', 'admin'), async (req, res) => {
-  const godownId = req.user.id;
+  const godownId = req.user.godown_id;
 
   try {
     const [
@@ -121,7 +121,7 @@ router.get('/dashboard', authenticateToken, authorizeRoles('godown', 'admin'), a
 // ─── GET /api/godown/yields ───────────────────────────────────────────────────
 // All yields assigned to this godown with full details
 router.get('/yields', authenticateToken, authorizeRoles('godown', 'admin'), async (req, res) => {
-  const godownId = req.user.id;
+  const godownId = req.user.godown_id;
   try {
     const result = await pool.query(`
       SELECT fy.*,
@@ -145,7 +145,7 @@ router.get('/yields', authenticateToken, authorizeRoles('godown', 'admin'), asyn
 // ─── GET /api/godown/stock ────────────────────────────────────────────────────
 // Current stock breakdown by crop
 router.get('/stock', authenticateToken, authorizeRoles('godown', 'admin'), async (req, res) => {
-  const godownId = req.user.id;
+  const godownId = req.user.godown_id;
   try {
     const result = await pool.query(`
       SELECT fy.crop_name,
@@ -185,11 +185,11 @@ router.get('/stock', authenticateToken, authorizeRoles('godown', 'admin'), async
 // ─── POST /api/godown/assign-yield/:yieldId ───────────────────────────────────
 // Assign a yield to this godown (godown head accepts a yield)
 router.post('/assign-yield/:yieldId', authenticateToken, authorizeRoles('godown', 'admin'), async (req, res) => {
-  const godownId = req.user.id;
+  const godownId = req.user.godown_id;
   const { yieldId } = req.params;
   try {
     const result = await pool.query(
-      `UPDATE farmer_yields SET godown_id = $1, godown_name = (SELECT name FROM users WHERE id = $1), updated_at = NOW()
+      `UPDATE farmer_yields SET godown_id = $1, godown_name = (SELECT name FROM godowns WHERE id = $1), updated_at = NOW()
        WHERE id = $2 RETURNING *`,
       [godownId, yieldId]
     );

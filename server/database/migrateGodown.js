@@ -41,14 +41,31 @@ async function migrateGodown() {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS godown_name VARCHAR(255)`);
     console.log('✅ godown_name column added to users');
 
-    // 5. Create indexes
+    // 5. Create godowns table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS godowns (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        location VARCHAR(255),
+        region VARCHAR(255),
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('✅ godowns table created');
+
+    // 6. Create indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_farmer_yields_godown_id ON farmer_yields(godown_id)`);
     console.log('✅ Index created on farmer_yields.godown_id');
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_godown_id ON users(godown_id)`);
     console.log('✅ Index created on users.godown_id');
 
-    // 6. Commit transaction
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_godowns_owner_id ON godowns(owner_id)`);
+    console.log('✅ Index created on godowns.owner_id');
+
+    // 7. Commit transaction
     await client.query('COMMIT');
     console.log('');
     console.log('✅ Godown migration completed successfully!');
@@ -57,6 +74,7 @@ async function migrateGodown() {
     console.log('   - Added godown role to user_role enum');
     console.log('   - Added godown_id + godown_name to farmer_yields');
     console.log('   - Added godown_id + godown_name to users');
+    console.log('   - Created godowns table');
     console.log('   - Created indexes for performance');
     console.log('');
     console.log('🎉 Your system is now ready for godown functionality!');

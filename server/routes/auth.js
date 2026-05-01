@@ -11,7 +11,7 @@ const { authenticateToken } = require('../middleware/auth');
 router.get('/godowns', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, region FROM users WHERE role = 'godown' AND is_active = true ORDER BY name`
+      `SELECT id, name, region FROM godowns WHERE is_active = true ORDER BY name`
     );
     res.json({ godowns: result.rows });
   } catch (err) {
@@ -66,7 +66,7 @@ router.post('/register',
 
       const normalizedRegion = role === 'transporter' ? normalizedTransporterSourceState : normalizedRegionInput;
       const transporterDestinationStatesForInsert = role === 'transporter'
-        ? `ARRAY[${normalizedTransporterDestinationStates.map((_, i) => `$${i + 10}`).join(',')}]::TEXT[]`
+        ? `ARRAY[${normalizedTransporterDestinationStates.map((_, i) => `$${i + 11}`).join(',')}]::TEXT[]`
         : 'ARRAY[]::TEXT[]';
 
       // Validate godown exists
@@ -74,7 +74,7 @@ router.post('/register',
       let resolvedGodownName = null;
       if (role === 'inspector' && godown_id) {
         const godownRes = await pool.query(
-          `SELECT id, name FROM users WHERE id = $1 AND role = 'godown' AND is_active = true`,
+          `SELECT id, name FROM godowns WHERE id = $1 AND is_active = true`,
           [godown_id]
         );
         if (godownRes.rows.length === 0) {
@@ -117,13 +117,22 @@ router.post('/register',
 
       const user = result.rows[0];
 
-      // If user is godown, update their godown_id to point to themselves
+      // If user is godown, create godown record and update their godown_id
       if (role === 'godown') {
-        await pool.query(
-          `UPDATE users SET godown_id = $1, godown_name = $2 WHERE id = $1`,
-          [user.id, user.name]
+        const godownResult = await pool.query(
+          `INSERT INTO godowns (name, owner_id, region, is_active)
+           VALUES ($1, $2, $3, true)
+           RETURNING id`,
+          [user.name, user.id, user.region]
         );
-        user.godown_id = user.id;
+        
+        const godownId = godownResult.rows[0].id;
+        
+        await pool.query(
+          `UPDATE users SET godown_id = $1, godown_name = $2 WHERE id = $3`,
+          [godownId, user.name, user.id]
+        );
+        user.godown_id = godownId;
         user.godown_name = user.name;
       }
       const token = jwt.sign(
