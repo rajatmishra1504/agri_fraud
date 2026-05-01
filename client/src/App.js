@@ -2116,7 +2116,7 @@ function Dashboard({ user }) {
   if (user.role === 'farmer') return <FarmerDashboard user={user} />;
   if (user.role === 'inspector') return <InspectorYieldsPage user={user} />;
   if (user.role === 'buyer') return <BuyerDashboard user={user} />;
-  if (user.role === 'transporter') return <TransporterDashboard user={user} />;
+  if (user.role === 'transporter') return <ShipmentsPage user={user} />;
   if (user.role === 'godown') return <GodownDashboard user={user} />;
   if (user.role === 'fraud_analyst' || user.role === 'admin') return <FraudAnalystDashboard user={user} />;
   
