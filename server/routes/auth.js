@@ -84,6 +84,12 @@ router.post('/register',
         resolvedGodownName = godownRes.rows[0].name;
       }
 
+      // Godown role should NOT have godown_id/godown_name set (they ARE the godown)
+      if (role === 'godown') {
+        resolvedGodownId = null;
+        resolvedGodownName = null;
+      }
+
       // Check email uniqueness
       const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
       if (existing.rows.length > 0) {
