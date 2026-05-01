@@ -10,16 +10,20 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ error: 'Access token required' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     
     // Verify user still exists and is active
     const result = await pool.query(
       'SELECT id, email, role, name, is_active FROM users WHERE id = $1',
-      [decoded.userId]
+      [decoded.id]
     );
 
-    if (result.rows.length === 0 || !result.rows[0].is_active) {
-      return res.status(401).json({ error: 'Invalid or inactive user' });
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'User no longer exists' });
+    }
+
+    if (!result.rows[0].is_active) {
+      return res.status(401).json({ error: 'User account is inactive' });
     }
 
     req.user = result.rows[0];
